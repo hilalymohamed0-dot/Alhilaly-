@@ -334,5 +334,79 @@
     if (o.ad.length) msg += 'أيام الغياب: ' + o.ad.join('، ') + '\n';
     if (o.ld.length) msg += 'أيام التأخر: ' + o.ld.join('، ') + '\n';
     msg += 'مع خالص التحية، إدارة معهد الهلالي.';
-render();
+    window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+
+  app.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-a]');
+    if (!t) return;
+    var a = t.dataset.a, id = t.dataset.id;
+    if (a === 'wa') { sendWA(id); return; }
+    if (a === 'wr') { sendReport(); return; }
+    if (a === 'pdf') { printPDF(); return; }
+    if (a === 'tab') { tab = t.dataset.v; }
+    else if (a === 'stuall') { stuAll = !stuAll; }
+    else if (a === 'mkmode') { if (mkmode === 'in') captureDraft(); mkmode = t.dataset.v; }
+    else if (a === 'add') {
+      var inp = document.getElementById('nm'), name = inp.value.trim();
+      var phone = digits(document.getElementById('ph').value);
+      if (!name) return;
+      db.students.push({ id: 's' + Date.now(), name: name, phone: phone }); save();
+    } else if (a === 'ph') {
+      var st = db.students.filter(function (s) { return s.id === id; })[0];
+      if (!st) return;
+      var nv = prompt('رقم ولي أمر ' + st.name + ' (مع رمز الدولة)', st.phone || '');
+      if (nv === null) return;
+      st.phone = digits(nv); save();
+    } else if (a === 'del') {
+      if (!confirm('حذف هذا الطالب؟')) return;
+      db.students = db.students.filter(function (s) { return s.id !== id; });
+      Object.keys(db.att).forEach(function (d) { delete db.att[d][id]; });
+      db.marks.forEach(function (m) { delete m.scores[id]; });
+      save();
+    } else if (a === 'set') {
+      var r = db.att[date] || (db.att[date] = {});
+      if (r[id] === t.dataset.v) delete r[id]; else r[id] = t.dataset.v;
+      if (!Object.keys(r).length) delete db.att[date];
+      save();
+    } else if (a === 'savemk') {
+      saveMarks();
+    } else if (a === 'delmk') {
+      if (!confirm('حذف هذا الامتحان وعلاماته؟')) return;
+      db.marks = db.marks.filter(function (m) { return m.id !== id; });
+      save();
+    } else if (a === 'addsub') {
+      var sn = document.getElementById('nsub'), nm2 = sn ? sn.value.trim() : '';
+      if (!nm2) return;
+      var sm = num((document.getElementById('nsubm') || {}).value);
+      if (db.subjects.indexOf(nm2) < 0) db.subjects.push(nm2);
+      if (sm && sm > 0) db.maxes[nm2] = sm;
+      save();
+      subj = nm2; exMaxFor = '';
+    } else if (a === 'setmax') {
+      var nv2 = prompt('العلامة العظمى لمادة ' + subj, db.maxes[subj] || '');
+      if (nv2 === null) return;
+      var mv = num(nv2);
+      if (!mv || mv <= 0) { alert('اكتب رقماً صحيحاً.'); return; }
+      db.maxes[subj] = mv; save(); exMaxFor = '';
+    } else if (a === 'delsub') {
+      if (!confirm('حذف مادة ' + subj + ' وكل علاماتها؟')) return;
+      var cur = subj;
+      db.subjects = db.subjects.filter(function (x) { return x !== cur; });
+      db.marks = db.marks.filter(function (m) { return m.subj !== cur; });
+      delete db.maxes[cur];
+      subj = ''; save();
+    }
+    render();
+  });
+  app.addEventListener('change', function (e) {
+    if (e.target.id === 'dt' && e.target.value) { date = e.target.value; render(); }
+    if (e.target.id === 'mo' && e.target.value) { month = e.target.value; render(); }
+    if (e.target.id === 'sel' && e.target.value) { sel = e.target.value; render(); }
+    if (e.target.id === 'sj' && e.target.value) { captureDraft(); subj = e.target.value; render(); }
+  });
+  app.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
+  });
+  render();
 })();
