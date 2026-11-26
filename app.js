@@ -58,13 +58,31 @@
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
       '<input id="ph" type="tel" inputmode="tel" placeholder="رقم ولي الأمر (مع رمز الدولة)" style="margin-top:8px">' +
       '<button class="btn" data-a="add" style="margin-top:8px">إضافة</button></div>';
-    if (!db.students.length) return h + '<div class="empty">لا يوجد طلاب بعد</div>';
+    if (!db.students.length) return h + '<div class="empty">لا يوجد طلاب بعد</div>' + backupCard();
     return h + db.students.map(function (s, i) {
       var p = s.phone ? '<div class="sub" dir="ltr">' + esc(s.phone) + '</div>' : '<div class="sub">لا يوجد رقم ولي أمر</div>';
       return '<div class="card row"><div class="name">' + (i + 1) + '. ' + esc(s.name) + p + '</div>' +
         '<button class="btn" data-a="ph" data-id="' + s.id + '">الرقم</button> ' +
         '<button class="btn x" data-a="del" data-id="' + s.id + '">حذف</button></div>';
-    }).join('');
+    }).join('') + backupCard();
+  }
+
+  function lastBackup() { try { return localStorage.getItem('hilalimeta_lastbackup') || ''; } catch (e) { return ''; } }
+
+  function backupCard() {
+    var last = lastBackup(), msg, warn = false;
+    if (!last) { msg = 'لم تحفظ نسخة احتياطية بعد'; warn = true; }
+    else {
+      var days = Math.floor((new Date(today()) - new Date(last)) / 86400000);
+      msg = 'آخر نسخة احتياطية: ' + last + (days > 0 ? ' (قبل ' + days + ' يوم)' : ' (اليوم)');
+      if (days >= 7) warn = true;
+    }
+    return '<div class="card"><div class="name">النسخة الاحتياطية</div>' +
+      '<div class="sub"' + (warn ? ' style="color:#c0392b"' : '') + '>' + msg + '</div>' +
+      '<div class="sub">تشمل كل الصفوف: الطلاب والحضور والعلامات.</div>' +
+      '<button class="btn" data-a="backup" style="margin-top:8px">حفظ نسخة احتياطية</button> ' +
+      '<button class="btn" data-a="restore" style="margin-top:8px">استرجاع من ملف</button>' +
+      '<input type="file" id="rf" style="display:none"></div>';
   }
 
   function attView() {
@@ -478,6 +496,53 @@
     });
   }
 
+  function makeBackup() {
+    var snap = {};
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('hilali_') === 0) snap[k] = localStorage.getItem(k);
+    }
+    var blob = new Blob([JSON.stringify({ app: 'hilali', v: 1, date: today(), data: snap })], { type: 'application/json' });
+    var fname = 'نسخة احتياطية الهلالي ' + today() + '.json';
+    function mark() { try { localStorage.setItem('hilalimeta_lastbackup', today()); } catch (e) {} render(); }
+    function dl() {
+      downloadBlob(blob, fname);
+      alert('تم حفظ النسخة الاحتياطية في جوالك (التنزيلات). أرسلها لنفسك على واتساب أو ارفعها على Drive لتبقى محفوظة خارج الجوال.');
+      mark();
+    }
+    var file = null;
+    try { file = new File([blob], fname, { type: 'application/json' }); } catch (e) {}
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: fname }).then(mark, function (e) {
+        if (!e || e.name !== 'AbortError') dl();
+      });
+    } else dl();
+  }
+
+  function restoreFrom(file) {
+    var fr = new FileReader();
+    fr.onload = function () {
+      var obj = null;
+      try { obj = JSON.parse(fr.result); } catch (e) {}
+      var keys = [], students = 0;
+      if (obj && obj.app === 'hilali' && obj.data && typeof obj.data === 'object') {
+        Object.keys(obj.data).forEach(function (k) {
+          if (k.indexOf('hilali_') !== 0) return;
+          var d = null;
+          try { d = JSON.parse(obj.data[k]); } catch (e) {}
+          if (d && d.students) { keys.push(k); students += d.students.length; }
+        });
+      }
+      if (!keys.length) { alert('هذا الملف ليس نسخة احتياطية صالحة لتطبيق الهلالي.'); return; }
+      if (!confirm('سيتم استبدال البيانات الحالية بمحتوى النسخة الاحتياطية.\nتاريخ النسخة: ' + (obj.date || '؟') + '\nعدد الصفوف: ' + keys.length + '، عدد الطلاب: ' + students + '\nهل تريد المتابعة؟')) return;
+      keys.forEach(function (k) { localStorage.setItem(k, obj.data[k]); });
+      alert('تم استرجاع البيانات بنجاح.');
+      location.reload();
+    };
+    fr.onerror = function () { alert('تعذّرت قراءة الملف.'); };
+    fr.readAsText(file);
+  }
+
   function printPDF() {
     var old = document.title, st = curStudent(), ls = null;
     if (tab === 'mk') {
@@ -531,6 +596,8 @@
     if (a === 'wr') { sendReport(); return; }
     if (a === 'pdf') { printPDF(); return; }
     if (a === 'sendpdf') { sendPDF(t); return; }
+    if (a === 'backup') { makeBackup(); return; }
+    if (a === 'restore') { var rf = document.getElementById('rf'); if (rf) rf.click(); return; }
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'stuall') { stuAll = !stuAll; }
     else if (a === 'mkmode') { if (mkmode === 'in') captureDraft(); mkmode = t.dataset.v; }
@@ -591,6 +658,7 @@
     if (e.target.id === 'mo' && e.target.value) { month = e.target.value; render(); }
     if (e.target.id === 'sel' && e.target.value) { sel = e.target.value; render(); }
     if (e.target.id === 'sj' && e.target.value) { captureDraft(); subj = e.target.value; render(); }
+    if (e.target.id === 'rf' && e.target.files && e.target.files[0]) { restoreFrom(e.target.files[0]); }
   });
   app.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
