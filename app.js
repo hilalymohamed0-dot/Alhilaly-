@@ -31,7 +31,9 @@
     if (!db.students.length) return h + '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     return h + db.students.map(function (s) {
       function b(v, t) { return '<button class="' + v + (r[s.id] === v ? ' on' : '') + '" data-a="set" data-id="' + s.id + '" data-v="' + v + '">' + t + '</button>'; }
-      return '<div class="card row"><div class="name">' + esc(s.name) + '</div><div class="st">' + b('p', 'حاضر') + b('l', 'متأخر') + b('a', 'غائب') + '</div></div>';
+      var wa = (r[s.id] === 'a' || r[s.id] === 'l')
+        ? '<button class="btn" data-a="wa" data-id="' + s.id + '" style="margin-top:8px">إرسال واتساب لولي الأمر</button>' : '';
+      return '<div class="card"><div class="row"><div class="name">' + esc(s.name) + '</div><div class="st">' + b('p', 'حاضر') + b('l', 'متأخر') + b('a', 'غائب') + '</div></div>' + wa + '</div>';
     }).join('');
   }
 
@@ -55,10 +57,21 @@
       '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + '</nav>' + v;
   }
 
+  function sendWA(id) {
+    var st = db.students.filter(function (s) { return s.id === id; })[0];
+    if (!st) return;
+    if (!st.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return; }
+    var v = (db.att[date] || {})[id];
+    var what = v === 'a' ? 'تغيّب عن' : 'تأخر عن';
+    var msg = 'السلام عليكم ورحمة الله،\nنود إعلامكم بأن الطالب ' + st.name + ' ' + what + ' معهد الهلالي بتاريخ ' + date + '.\nمع خالص التحية، إدارة معهد الهلالي.';
+    window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+
   app.addEventListener('click', function (e) {
     var t = e.target.closest('[data-a]');
     if (!t) return;
     var a = t.dataset.a, id = t.dataset.id;
+    if (a === 'wa') { sendWA(id); return; }
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'add') {
       var inp = document.getElementById('nm'), name = inp.value.trim();
