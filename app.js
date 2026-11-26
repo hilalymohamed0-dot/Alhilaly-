@@ -42,6 +42,15 @@
     '}';
   document.head.appendChild(css);
 
+  var logoData = '';
+  try {
+    fetch('icon-192.png').then(function (r) { return r.blob(); }).then(function (b) {
+      var fr = new FileReader();
+      fr.onload = function () { logoData = fr.result; };
+      fr.readAsDataURL(b);
+    }).catch(function () {});
+  } catch (e) {}
+
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
   var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false;
 
@@ -158,7 +167,8 @@
     var h = '<div class="card noprint"><select id="sel" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
       (stuAll ? '' : '<input type="month" id="mo" value="' + month + '" style="margin-top:8px">') +
       '<button class="btn" data-a="stuall" style="margin-top:8px">' + (stuAll ? 'عرض شهر محدد' : 'عرض كل المدة') + '</button> ' +
-      '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button></div>';
+      '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button> ' +
+      '<button class="btn" data-a="sendpdf" style="margin-top:8px">إرسال التقرير الكامل PDF لولي الأمر</button></div>';
     var o = stuStats(s, stuAll);
     if (!o.t) {
       h += '<div class="empty">لا توجد بيانات حضور لهذا الطالب' + (stuAll ? '' : ' في هذا الشهر') + '</div>';
@@ -292,6 +302,182 @@
       '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + '</nav>' + ph + v;
   }
 
+  function reportHTML(s, all) {
+    var o = stuStats(s, all);
+    var period = all ? 'كل المدة' : 'شهر ' + month;
+    function box(n, l, c) {
+      return '<div style="flex:1;border:1px solid #d9d2bd;border-radius:10px;padding:10px;text-align:center">' +
+        '<div style="font-size:26px;font-weight:bold;color:' + c + '">' + n + '</div><div style="font-size:13px;color:#555">' + l + '</div></div>';
+    }
+    function chips(arr) {
+      if (!arr.length) return '<span style="font-size:13px;color:#555">لا يوجد</span>';
+      return arr.map(function (d) {
+        return '<span style="display:inline-block;direction:ltr;margin:0 0 5px 6px;padding:1px 8px;border:1px solid #cfc7ae;border-radius:6px;font-size:13px">' + d + '</span>';
+      }).join('');
+    }
+    function sec(title, inner) {
+      return '<div style="margin-top:14px"><div style="font-weight:bold;font-size:15px;color:#1a6f6f;margin-bottom:5px">' + title + '</div>' + inner + '</div>';
+    }
+    var th = 'border:1px solid #bbb;padding:7px;background:#f3ead0;font-size:13px';
+    var td = 'border:1px solid #bbb;padding:7px;font-size:13px;vertical-align:top';
+    var att;
+    if (o.t) {
+      att = '<div style="display:flex;gap:10px;margin-top:6px">' + box(o.p, 'حاضر', '#1a8a5a') + box(o.l, 'متأخر', '#b8860b') + box(o.a, 'غائب', '#c0392b') + box(o.pc + '%', 'نسبة الحضور', '#1a6f6f') + '</div>' +
+        sec('أيام الغياب (' + o.ad.length + ')', chips(o.ad)) +
+        sec('أيام التأخر (' + o.ld.length + ')', chips(o.ld)) +
+        sec('أيام الحضور (' + o.pd.length + ')', chips(o.pd));
+    } else {
+      att = '<div style="font-size:13px;color:#555;margin-top:6px">لا توجد بيانات حضور في هذه الفترة</div>';
+    }
+    var rows = '', tot = 0, n = 0;
+    db.subjects.forEach(function (sj) {
+      var ex = db.marks.filter(function (m) { return m.subj === sj && m.scores[s.id] !== undefined; })
+        .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      if (!ex.length) return;
+      var av = subjAvg(s.id, sj);
+      tot += av; n++;
+      var list = ex.map(function (m) {
+        return esc(m.title) + ' <span style="direction:ltr;display:inline-block">(' + m.date + ')</span>: <b>' +
+          '<span style="direction:ltr;display:inline-block">' + m.scores[s.id] + ' / ' + m.max + '</span></b>';
+      }).join('<br/>');
+      rows += '<tr><td style="' + td + ';font-weight:bold">' + esc(sj) + (db.maxes[sj] ? ' <span style="color:#777;font-weight:normal">(' + db.maxes[sj] + ')</span>' : '') + '</td>' +
+        '<td style="' + td + ';line-height:1.8">' + list + '</td>' +
+        '<td style="' + td + ';text-align:center;font-weight:bold;color:' + (av < 50 ? '#c0392b' : '#1a1a1a') + '">' + av + '%</td></tr>';
+    });
+    var marks;
+    if (n) {
+      var g = Math.round(tot / n);
+      marks = '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">المادة</th><th style="' + th + '">الامتحانات والعلامات</th><th style="' + th + '">المتوسط</th></tr></thead><tbody>' + rows +
+        '<tr><td style="' + td + ';font-weight:bold" colspan="2">المعدل العام</td><td style="' + td + ';text-align:center;font-weight:bold;color:' + (g < 50 ? '#c0392b' : '#1a1a1a') + '">' + g + '%</td></tr></tbody></table>';
+    } else {
+      marks = '<div style="font-size:13px;color:#555">لا توجد علامات مسجلة</div>';
+    }
+    return '<div style="width:794px;box-sizing:border-box;padding:30px;background:#fff;color:#1a1a1a;direction:rtl;text-align:right;font-family:Tahoma,Arial,sans-serif">' +
+      '<div style="display:flex;align-items:center;gap:16px;border-bottom:4px solid #c9a227;padding-bottom:14px">' +
+      (logoData ? '<img src="' + logoData + '" style="width:84px;height:84px;object-fit:contain" alt=""/>' : '') +
+      '<div><div style="font-size:28px;font-weight:bold;color:#1a6f6f">معهد الهلالي</div>' +
+      '<div style="font-size:15px;margin-top:4px">' + esc(TITLE) + ' — تقرير الطالب</div>' +
+      '<div style="font-size:13px;color:#666;margin-top:2px">الفترة: ' + period + ' · تاريخ الإصدار: ' + today() + '</div></div></div>' +
+      '<div style="margin-top:16px;font-size:22px;font-weight:bold">الطالب: ' + esc(s.name) + '</div>' +
+      sec('الحضور والغياب', att) +
+      sec('العلامات', marks) +
+      '<div style="margin-top:26px;border-top:1px solid #ddd;padding-top:10px;font-size:12px;color:#777;text-align:center">إدارة معهد الهلالي</div></div>';
+  }
+
+  function u8(str) { var a = new Uint8Array(str.length); for (var i = 0; i < str.length; i++) a[i] = str.charCodeAt(i) & 255; return a; }
+  function b64ToU8(b64) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+
+  function buildPDF(pages) {
+    var PW = 595.28, PH = 841.89, chunks = [], pos = 0, offs = [];
+    function push(x) { var a = typeof x === 'string' ? u8(x) : x; chunks.push(a); pos += a.length; }
+    function obj(n, head, stream) {
+      offs[n] = pos; push(n + ' 0 obj\n' + head + '\n');
+      if (stream) { push('stream\n'); push(stream); push('\nendstream\n'); }
+      push('endobj\n');
+    }
+    var n = pages.length;
+    push('%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    var kids = pages.map(function (p, i) { return (3 + 3 * i) + ' 0 R'; }).join(' ');
+    obj(2, '<< /Type /Pages /Kids [' + kids + '] /Count ' + n + ' >>');
+    pages.forEach(function (p, i) {
+      var H = PW * p.h / p.w, y = PH - H;
+      var cs = 'q ' + PW.toFixed(2) + ' 0 0 ' + H.toFixed(2) + ' 0 ' + y.toFixed(2) + ' cm /Im0 Do Q';
+      obj(3 + 3 * i, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /XObject << /Im0 ' + (5 + 3 * i) + ' 0 R >> >> /Contents ' + (4 + 3 * i) + ' 0 R >>');
+      obj(4 + 3 * i, '<< /Length ' + cs.length + ' >>', cs);
+      obj(5 + 3 * i, '<< /Type /XObject /Subtype /Image /Width ' + p.w + ' /Height ' + p.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + p.d.length + ' >>', p.d);
+    });
+    var total = 3 + 3 * n, xr = pos;
+    var x = 'xref\n0 ' + total + '\n0000000000 65535 f \n';
+    for (var i = 1; i < total; i++) x += ('0000000000' + offs[i]).slice(-10) + ' 00000 n \n';
+    push(x);
+    push('trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF');
+    return new Blob(chunks, { type: 'application/pdf' });
+  }
+
+  function htmlToCanvas(html) {
+    return new Promise(function (res, rej) {
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;';
+      wrap.innerHTML = html;
+      document.body.appendChild(wrap);
+      var el = wrap.firstChild, imgs = el.querySelectorAll('img'), pending = imgs.length, started = false;
+      function go() {
+        if (started) return; started = true;
+        var h = el.offsetHeight, xml = new XMLSerializer().serializeToString(el);
+        document.body.removeChild(wrap);
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="794" height="' + h + '"><foreignObject x="0" y="0" width="794" height="' + h + '">' + xml + '</foreignObject></svg>';
+        var im = new Image();
+        im.onload = function () {
+          try {
+            var sc = h > 2600 ? 1.5 : 2, cw = Math.round(794 * sc), ch = Math.round(h * sc);
+            var cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+            var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cw, ch);
+            cx.drawImage(im, 0, 0, cw, ch);
+            res(cv);
+          } catch (e) { rej(e); }
+        };
+        im.onerror = function () { rej(new Error('render')); };
+        im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      }
+      if (!pending) { go(); return; }
+      function one() { pending--; if (pending <= 0) go(); }
+      for (var i = 0; i < imgs.length; i++) {
+        if (imgs[i].complete) one(); else { imgs[i].onload = one; imgs[i].onerror = one; }
+      }
+      setTimeout(go, 3000);
+    });
+  }
+
+  function makeReportPDF(s) {
+    return htmlToCanvas(reportHTML(s, stuAll)).then(function (cv) {
+      var cw = cv.width, ch = cv.height, pageH = Math.round(cw * 841.89 / 595.28), pages = [];
+      for (var y = 0; y < ch; y += pageH) {
+        var sh = Math.min(pageH, ch - y);
+        var c2 = document.createElement('canvas'); c2.width = cw; c2.height = sh;
+        var x2 = c2.getContext('2d'); x2.fillStyle = '#fff'; x2.fillRect(0, 0, cw, sh);
+        x2.drawImage(cv, 0, y, cw, sh, 0, 0, cw, sh);
+        pages.push({ d: b64ToU8(c2.toDataURL('image/jpeg', 0.92).split(',')[1]), w: cw, h: sh });
+      }
+      return buildPDF(pages);
+    });
+  }
+
+  function downloadBlob(blob, name) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); if (a.parentNode) a.parentNode.removeChild(a); }, 4000);
+  }
+
+  function sendPDF(btn) {
+    var st = curStudent();
+    if (!st) return;
+    var o = stuStats(st, stuAll);
+    var hasMarks = db.marks.some(function (m) { return m.scores[st.id] !== undefined; });
+    if (!o.t && !hasMarks) { alert('لا توجد بيانات حضور أو علامات لهذا الطالب.'); return; }
+    var old = btn.textContent;
+    btn.textContent = 'جارٍ تجهيز الملف...'; btn.disabled = true;
+    function done() { btn.textContent = old; btn.disabled = false; }
+    makeReportPDF(st).then(function (blob) {
+      var fname = 'تقرير ' + st.name.replace(/[\\\/:*?"<>|]/g, ' ') + '.pdf';
+      var file = null;
+      try { file = new File([blob], fname, { type: 'application/pdf' }); } catch (e) {}
+      var text = 'السلام عليكم ورحمة الله،\nتقرير الطالب ' + st.name + ' من معهد الهلالي (' + (stuAll ? 'كل المدة' : 'شهر ' + month) + ').';
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        return navigator.share({ files: [file], title: fname, text: text }).catch(function (e) {
+          if (!e || e.name !== 'AbortError') throw e;
+        });
+      }
+      downloadBlob(blob, fname);
+      alert('تم حفظ الملف في جوالك (التنزيلات). أرفقه الآن في واتساب مع ولي الأمر.');
+      if (st.phone) window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(text), '_blank');
+    }).then(done, function () {
+      done();
+      if (confirm('تعذّر إنشاء الملف مباشرة. هل تريد حفظ التقرير عبر الطباعة بدلاً من ذلك؟')) printPDF();
+    });
+  }
+
   function printPDF() {
     var old = document.title, st = curStudent(), ls = null;
     if (tab === 'mk') {
@@ -344,6 +530,7 @@
     if (a === 'wa') { sendWA(id); return; }
     if (a === 'wr') { sendReport(); return; }
     if (a === 'pdf') { printPDF(); return; }
+    if (a === 'sendpdf') { sendPDF(t); return; }
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'stuall') { stuAll = !stuAll; }
     else if (a === 'mkmode') { if (mkmode === 'in') captureDraft(); mkmode = t.dataset.v; }
