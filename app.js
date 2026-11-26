@@ -4,11 +4,18 @@
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   if (!db || !db.students) db = { students: [], att: {} };
   var IS9 = TITLE.indexOf('التاسع') >= 0;
-  var DEF = { 'رياضيات': 300, 'فيزياء وكيمياء': 200, 'علوم': 300, 'عربي': 600, 'انكليزي': 400, 'فرنسي': 400, 'اجتماعيات': 300, 'ديانة': 200 };
-  if (!db.subjects) db.subjects = IS9 ? Object.keys(DEF) : [];
-  if (!db.maxes) db.maxes = {};
-  if (IS9) db.subjects.forEach(function (s) { if (db.maxes[s] === undefined && DEF[s] !== undefined) db.maxes[s] = DEF[s]; });
+  var IS_BAK = CLS === 'bakaloria' || TITLE.indexOf('بكالوريا') >= 0;
+  var DEF = IS9
+    ? { 'رياضيات': 300, 'فيزياء وكيمياء': 200, 'علوم': 300, 'عربي': 600, 'انكليزي': 400, 'فرنسي': 400, 'اجتماعيات': 300, 'ديانة': 200 }
+    : IS_BAK
+      ? { 'رياضيات': 600, 'فيزياء': 400, 'علوم': 300, 'عربي': 400, 'انكليزي': 300, 'فرنسي': 300, 'ديانة': 200, 'كيمياء': 200 }
+      : {};
+  var DEFKEYS = Object.keys(DEF);
   if (!db.marks) db.marks = [];
+  if (!db.subjects) db.subjects = DEFKEYS.slice();
+  else if (!db.subjects.length && DEFKEYS.length && !db.marks.length) db.subjects = DEFKEYS.slice();
+  if (!db.maxes) db.maxes = {};
+  db.subjects.forEach(function (s) { if (db.maxes[s] === undefined && DEF[s] !== undefined) db.maxes[s] = DEF[s]; });
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function today() { var d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
