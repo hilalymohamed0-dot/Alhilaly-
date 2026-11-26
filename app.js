@@ -8,6 +8,21 @@
   function today() { var d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   function digits(s) { return String(s || '').replace(/[٠-٩]/g, function (c) { return c.charCodeAt(0) - 1632; }).replace(/\D/g, ''); }
 
+  var css = document.createElement('style');
+  css.textContent =
+    '@media screen{.printhead{display:none}}' +
+    '@media print{' +
+    'header.brand,nav,.btn,.noprint,button{display:none!important}' +
+    'body{background:#fff!important}' +
+    '*{-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '.printhead{display:flex;align-items:center;gap:14px;border-bottom:3px solid #c9a227;padding-bottom:12px;margin-bottom:16px}' +
+    '.printhead img{width:80px;height:80px;object-fit:contain}' +
+    '.printhead h2{margin:0 0 4px;font-size:24px}' +
+    '.printhead div{font-size:14px;line-height:1.7}' +
+    '.card{break-inside:avoid;box-shadow:none!important;border:1px solid #ddd}' +
+    '}';
+  document.head.appendChild(css);
+
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
 
   function studentsView() {
@@ -43,9 +58,16 @@
     }).sort();
   }
 
+  function printHead(title) {
+    return '<div class="printhead"><img src="icon-192.png" alt=""><div><h2>معهد الهلالي</h2>' +
+      '<div>' + esc(TITLE) + ' — ' + esc(title) + '</div>' +
+      '<div>الشهر: ' + month + ' · تاريخ الإصدار: ' + today() + '</div></div></div>';
+  }
+
   function repView() {
     var days = monthDays();
-    var h = '<div class="card"><input type="month" id="mo" value="' + month + '"></div>' +
+    var h = '<div class="card noprint"><input type="month" id="mo" value="' + month + '">' +
+      '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button></div>' +
       '<div class="sum"><div><b>' + days.length + '</b>أيام الشهر</div><div><b>' + db.students.length + '</b>عدد الطلاب</div></div>';
     if (!db.students.length || !days.length) return h + '<div class="empty">لا توجد بيانات حضور في هذا الشهر</div>';
     return h + db.students.map(function (s) {
@@ -83,8 +105,9 @@
     var opts = db.students.map(function (x) {
       return '<option value="' + x.id + '"' + (x.id === s.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
     }).join('');
-    var h = '<div class="card"><select id="sel" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
-      '<input type="month" id="mo" value="' + month + '" style="margin-top:8px"></div>';
+    var h = '<div class="card noprint"><select id="sel" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
+      '<input type="month" id="mo" value="' + month + '" style="margin-top:8px">' +
+      '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button></div>';
     var o = stuStats(s);
     if (!o.t) return h + '<div class="empty">لا توجد بيانات لهذا الطالب في هذا الشهر</div>';
     h += '<div class="sum"><div><b>' + o.p + '</b>حاضر</div><div><b>' + o.l + '</b>متأخر</div><div><b>' + o.a + '</b>غائب</div></div>';
@@ -97,9 +120,20 @@
 
   function render() {
     var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : stuView();
+    var ph = '';
+    if (tab === 'rp') ph = printHead('تقرير الصف الشهري');
+    else if (tab === 'sr' && curStudent()) ph = printHead('تقرير الطالب: ' + curStudent().name);
     function n(k, t) { return '<button class="' + (tab === k ? 'on' : '') + '" data-a="tab" data-v="' + k + '">' + t + '</button>'; }
     app.innerHTML = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + '</span></div><a class="back" href="index.html">الرئيسية</a></header>' +
-      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + '</nav>' + v;
+      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + '</nav>' + ph + v;
+  }
+
+  function printPDF() {
+    var old = document.title, st = curStudent();
+    document.title = (tab === 'sr' && st) ? 'تقرير ' + st.name + ' ' + month : 'تقرير ' + TITLE + ' ' + month;
+    function back() { document.title = old; window.removeEventListener('afterprint', back); }
+    window.addEventListener('afterprint', back);
+    window.print();
   }
 
   function sendWA(id) {
@@ -132,6 +166,7 @@
     var a = t.dataset.a, id = t.dataset.id;
     if (a === 'wa') { sendWA(id); return; }
     if (a === 'wr') { sendReport(); return; }
+    if (a === 'pdf') { printPDF(); return; }
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'add') {
       var inp = document.getElementById('nm'), name = inp.value.trim();
