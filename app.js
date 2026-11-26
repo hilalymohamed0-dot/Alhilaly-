@@ -8,7 +8,7 @@
   function today() { var d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   function digits(s) { return String(s || '').replace(/[٠-٩]/g, function (c) { return c.charCodeAt(0) - 1632; }).replace(/\D/g, ''); }
 
-  var tab = 'st', date = today(), app = document.getElementById('app');
+  var tab = 'st', date = today(), month = today().slice(0, 7), app = document.getElementById('app');
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -38,17 +38,21 @@
   }
 
   function repView() {
-    var days = Object.keys(db.att).filter(function (d) { return Object.keys(db.att[d]).length; });
-    var h = '<div class="sum"><div><b>' + days.length + '</b>عدد الأيام</div><div><b>' + db.students.length + '</b>عدد الطلاب</div></div>';
-    if (!db.students.length || !days.length) return h + '<div class="empty">لا توجد بيانات حضور بعد</div>';
-    return h + db.students.map(function (s) {
-      var p = 0, l = 0, a = 0;
-      days.forEach(function (d) { var v = db.att[d][s.id]; if (v === 'p') p++; else if (v === 'l') l++; else if (v === 'a') a++; });
-      var t = p + l + a, pc = t ? Math.round((p + l) / t * 100) : 0;
-      return '<div class="card"><div class="row"><div class="name">' + esc(s.name) + '</div><b>' + pc + '%</b></div>' +
-        '<div class="sub">حاضر ' + p + ' · متأخر ' + l + ' · غائب ' + a + '</div><div class="bar"><i style="width:' + pc + '%"></i></div></div>';
-    }).join('');
-  }
+  var days = Object.keys(db.att).filter(function (d) {
+    return d.slice(0, 7) === month && Object.keys(db.att[d]).length;
+  });
+  var h = '<div class="card"><input type="month" id="mo" value="' + month + '"></div>' +
+    '<div class="sum"><div><b>' + days.length + '</b>أيام الشهر</div><div><b>' + db.students.length + '</b>عدد الطلاب</div></div>';
+  if (!db.students.length || !days.length) return h + '<div class="empty">لا توجد بيانات حضور في هذا الشهر</div>';
+  return h + db.students.map(function (s) {
+    var p = 0, l = 0, a = 0;
+    days.forEach(function (d) { var v = db.att[d][s.id]; if (v === 'p') p++; else if (v === 'l') l++; else if (v === 'a') a++; });
+    var t = p + l + a, pc = t ? Math.round((p + l) / t * 100) : 0;
+    var warn = a >= 3 ? ' style="color:#c0392b"' : '';
+    return '<div class="card"><div class="row"><div class="name"' + warn + '>' + esc(s.name) + '</div><b>' + pc + '%</b></div>' +
+      '<div class="sub">حاضر ' + p + ' · متأخر ' + l + ' · غائب ' + a + '</div><div class="bar"><i style="width:' + pc + '%"></i></div></div>';
+  }).join('');
+      }
 
   function render() {
     var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : repView();
@@ -99,6 +103,7 @@
   });
   app.addEventListener('change', function (e) {
     if (e.target.id === 'dt' && e.target.value) { date = e.target.value; render(); }
+      if (e.target.id === 'mo' && e.target.value) { month = e.target.value; render(); }
   });
   app.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
