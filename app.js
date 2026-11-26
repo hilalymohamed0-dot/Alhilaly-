@@ -20,6 +20,11 @@
 
   var css = document.createElement('style');
   css.textContent =
+    '.mtable{overflow-x:auto}' +
+    '.mtable table{width:100%;border-collapse:collapse;font-size:13px}' +
+    '.mtable th,.mtable td{border:1px solid rgba(128,128,128,.5);padding:6px 4px;text-align:center}' +
+    '.mtable td.nm{text-align:right;white-space:nowrap}' +
+    '.mtable td.ls{text-align:right;line-height:1.7}' +
     '@media screen{.printhead{display:none}}' +
     '@media print{' +
     'header.brand,nav,.btn,.noprint,button{display:none!important}' +
@@ -30,11 +35,15 @@
     '.printhead h2{margin:0 0 4px;font-size:24px}' +
     '.printhead div{font-size:14px;line-height:1.7}' +
     '.card{break-inside:avoid;box-shadow:none!important;border:1px solid #ddd}' +
+    '.mtable{overflow:visible}' +
+    '.mtable,.mtable *{color:#000!important}' +
+    '.mtable th{background:#f3ead0!important}' +
+    '.mtable .low{color:#c0392b!important}' +
     '}';
   document.head.appendChild(css);
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {};
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false;
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -63,20 +72,21 @@
     }).join('');
   }
 
-  function monthDays() {
+  function monthDays(all) {
     return Object.keys(db.att).filter(function (d) {
-      return d.slice(0, 7) === month && Object.keys(db.att[d]).length;
+      return (all || d.slice(0, 7) === month) && Object.keys(db.att[d]).length;
     }).sort();
   }
 
-  function printHead(title) {
+  function printHead(title, noMonth, label) {
+    var per = noMonth ? '' : (label || 'الشهر: ' + month) + ' · ';
     return '<div class="printhead"><img src="icon-192.png" alt=""><div><h2>معهد الهلالي</h2>' +
       '<div>' + esc(TITLE) + ' — ' + esc(title) + '</div>' +
-      '<div>الشهر: ' + month + ' · تاريخ الإصدار: ' + today() + '</div></div></div>';
+      '<div>' + per + 'تاريخ الإصدار: ' + today() + '</div></div></div>';
   }
 
   function repView() {
-    var days = monthDays();
+    var days = monthDays(false);
     var h = '<div class="card noprint"><input type="month" id="mo" value="' + month + '">' +
       '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button></div>' +
       '<div class="sum"><div><b>' + days.length + '</b>أيام الشهر</div><div><b>' + db.students.length + '</b>عدد الطلاب</div></div>';
@@ -97,17 +107,46 @@
     return st;
   }
 
-  function stuStats(s) {
-    var o = { p: 0, l: 0, a: 0, ad: [], ld: [] };
-    monthDays().forEach(function (d) {
+  function stuStats(s, all) {
+    var o = { p: 0, l: 0, a: 0, pd: [], ad: [], ld: [] };
+    monthDays(all).forEach(function (d) {
       var v = db.att[d][s.id];
-      if (v === 'p') o.p++;
+      if (v === 'p') { o.p++; o.pd.push(d); }
       else if (v === 'l') { o.l++; o.ld.push(d); }
       else if (v === 'a') { o.a++; o.ad.push(d); }
     });
     o.t = o.p + o.l + o.a;
     o.pc = o.t ? Math.round((o.p + o.l) / o.t * 100) : 0;
     return o;
+  }
+
+  function subjAvg(sid, sj) {
+    var tot = 0, n = 0;
+    db.marks.forEach(function (m) {
+      if (m.subj === sj && m.scores[sid] !== undefined) { tot += m.scores[sid] / m.max * 100; n++; }
+    });
+    return n ? Math.round(tot / n) : null;
+  }
+
+  function stuMarks(s) {
+    var rows = '', tot = 0, n = 0;
+    db.subjects.forEach(function (sj) {
+      var ex = db.marks.filter(function (m) { return m.subj === sj && m.scores[s.id] !== undefined; })
+        .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      if (!ex.length) return;
+      var av = subjAvg(s.id, sj);
+      tot += av; n++;
+      var list = ex.map(function (m) {
+        return esc(m.title) + ' (' + m.date + '): ' + m.scores[s.id] + ' / ' + m.max;
+      }).join('<br>');
+      rows += '<tr><td class="nm">' + esc(sj) + '</td><td class="ls">' + list + '</td>' +
+        '<td><b' + (av < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + av + '%</b></td></tr>';
+    });
+    if (!n) return '<div class="card"><div class="name">العلامات</div><div class="sub">لا توجد علامات مسجلة لهذا الطالب</div></div>';
+    var g = Math.round(tot / n);
+    return '<div class="mtable card"><div class="name" style="margin-bottom:8px">العلامات</div><table><thead><tr><th>المادة</th><th>الامتحانات</th><th>المتوسط</th></tr></thead><tbody>' +
+      rows + '<tr><td class="nm"><b>المعدل العام</b></td><td></td><td><b' + (g < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + g + '%</b></td></tr>' +
+      '</tbody></table></div>';
   }
 
   function stuView() {
@@ -117,15 +156,21 @@
       return '<option value="' + x.id + '"' + (x.id === s.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
     }).join('');
     var h = '<div class="card noprint"><select id="sel" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
-      '<input type="month" id="mo" value="' + month + '" style="margin-top:8px">' +
+      (stuAll ? '' : '<input type="month" id="mo" value="' + month + '" style="margin-top:8px">') +
+      '<button class="btn" data-a="stuall" style="margin-top:8px">' + (stuAll ? 'عرض شهر محدد' : 'عرض كل المدة') + '</button> ' +
       '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button></div>';
-    var o = stuStats(s);
-    if (!o.t) return h + '<div class="empty">لا توجد بيانات لهذا الطالب في هذا الشهر</div>';
-    h += '<div class="sum"><div><b>' + o.p + '</b>حاضر</div><div><b>' + o.l + '</b>متأخر</div><div><b>' + o.a + '</b>غائب</div></div>';
-    h += '<div class="card"><div class="row"><div class="name">نسبة الحضور</div><b>' + o.pc + '%</b></div><div class="bar"><i style="width:' + o.pc + '%"></i></div></div>';
-    h += '<div class="card"><div class="name">أيام الغياب</div><div class="sub">' + (o.ad.length ? o.ad.join('، ') : 'لا يوجد') + '</div></div>';
-    h += '<div class="card"><div class="name">أيام التأخر</div><div class="sub">' + (o.ld.length ? o.ld.join('، ') : 'لا يوجد') + '</div>' +
-      '<button class="btn" data-a="wr" style="margin-top:8px">إرسال التقرير لولي الأمر</button></div>';
+    var o = stuStats(s, stuAll);
+    if (!o.t) {
+      h += '<div class="empty">لا توجد بيانات حضور لهذا الطالب' + (stuAll ? '' : ' في هذا الشهر') + '</div>';
+    } else {
+      h += '<div class="sum"><div><b>' + o.p + '</b>حاضر</div><div><b>' + o.l + '</b>متأخر</div><div><b>' + o.a + '</b>غائب</div></div>';
+      h += '<div class="card"><div class="row"><div class="name">نسبة الحضور</div><b>' + o.pc + '%</b></div><div class="bar"><i style="width:' + o.pc + '%"></i></div></div>';
+      h += '<div class="card"><div class="name">أيام الحضور</div><div class="sub">' + (o.pd.length ? o.pd.join('، ') : 'لا يوجد') + '</div></div>';
+      h += '<div class="card"><div class="name">أيام الغياب</div><div class="sub">' + (o.ad.length ? o.ad.join('، ') : 'لا يوجد') + '</div></div>';
+      h += '<div class="card"><div class="name">أيام التأخر</div><div class="sub">' + (o.ld.length ? o.ld.join('، ') : 'لا يوجد') + '</div>' +
+        (stuAll ? '' : '<button class="btn" data-a="wr" style="margin-top:8px">إرسال التقرير لولي الأمر</button>') + '</div>';
+    }
+    h += stuMarks(s);
     return h;
   }
 
@@ -136,15 +181,46 @@
       '<button class="btn" data-a="addsub" style="margin-top:8px">إضافة مادة</button></div>';
   }
 
+  function marksTop() {
+    function mb(k, t) { return '<button class="btn" data-a="mkmode" data-v="' + k + '" style="' + (mkmode === k ? 'outline:2px solid #3dbab5' : 'opacity:.7') + '">' + t + '</button>'; }
+    return '<div class="card noprint"><div class="row">' + mb('in', 'إدخال العلامات') + mb('rep', 'تقرير العلامات') + '</div></div>';
+  }
+
+  function marksRepView() {
+    var h = marksTop();
+    if (!db.subjects.length) return h + '<div class="empty">لا توجد مواد بعد</div>';
+    if (!db.students.length) return h + '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    if (!db.marks.length) return h + '<div class="empty">لا توجد علامات مسجلة بعد</div>';
+    h += '<div class="card noprint"><button class="btn" data-a="pdf">حفظ تقرير العلامات PDF</button></div>';
+    var t = '<div class="mtable card"><table><thead><tr><th>الطالب</th>' + db.subjects.map(function (sj) {
+      return '<th>' + esc(sj) + (db.maxes[sj] ? '<br>(' + db.maxes[sj] + ')' : '') + '</th>';
+    }).join('') + '<th>المعدل العام</th></tr></thead><tbody>';
+    db.students.forEach(function (s) {
+      var tot = 0, n = 0;
+      var cells = db.subjects.map(function (sj) {
+        var v = subjAvg(s.id, sj);
+        if (v === null) return '<td>—</td>';
+        tot += v; n++;
+        return '<td' + (v < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + v + '%</td>';
+      }).join('');
+      var g = n ? Math.round(tot / n) : null;
+      t += '<tr><td class="nm">' + esc(s.name) + '</td>' + cells +
+        '<td><b' + (g !== null && g < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + (g === null ? '—' : g + '%') + '</b></td></tr>';
+    });
+    t += '</tbody></table><div class="sub" style="margin-top:8px">النسبة المئوية لمتوسط علامات كل مادة من علامتها العظمى (الرقم بين القوسين). عدد الامتحانات المسجلة: ' + db.marks.length + '</div></div>';
+    return h + t;
+  }
+
   function marksView() {
-    if (!db.subjects.length) return addSubCard('لا توجد مواد بعد. أضف أول مادة:');
+    if (mkmode === 'rep') return marksRepView();
+    if (!db.subjects.length) return marksTop() + addSubCard('لا توجد مواد بعد. أضف أول مادة:');
     if (db.subjects.indexOf(subj) < 0) subj = db.subjects[0];
     if (exMaxFor !== subj) { exMax = String(db.maxes[subj] || 100); exMaxFor = subj; }
-    if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    if (!db.students.length) return marksTop() + '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var opts = db.subjects.map(function (x) {
       return '<option value="' + esc(x) + '"' + (x === subj ? ' selected' : '') + '>' + esc(x) + (db.maxes[x] ? ' (' + db.maxes[x] + ')' : '') + '</option>';
     }).join('');
-    var h = '<div class="card"><select id="sj" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
+    var h = marksTop() + '<div class="card"><select id="sj" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
       '<input id="exn" placeholder="اسم الامتحان (مثل: مذاكرة أولى)" value="' + esc(exTitle) + '" style="margin-top:8px">' +
       '<input id="exm" type="text" inputmode="decimal" placeholder="العلامة العظمى" value="' + esc(exMax) + '" style="margin-top:8px">' +
       '<input id="exd" type="date" value="' + exDate + '" style="margin-top:8px"></div>';
@@ -209,16 +285,30 @@
     var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : stuView();
     var ph = '';
     if (tab === 'rp') ph = printHead('تقرير الصف الشهري');
-    else if (tab === 'sr' && curStudent()) ph = printHead('تقرير الطالب: ' + curStudent().name);
+    else if (tab === 'sr' && curStudent()) ph = printHead('تقرير الطالب: ' + curStudent().name, false, stuAll ? 'كل المدة' : 'الشهر: ' + month);
+    else if (tab === 'mk' && mkmode === 'rep') ph = printHead('تقرير العلامات', true);
     function n(k, t) { return '<button class="' + (tab === k ? 'on' : '') + '" data-a="tab" data-v="' + k + '">' + t + '</button>'; }
     app.innerHTML = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + '</span></div><a class="back" href="index.html">الرئيسية</a></header>' +
       '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + '</nav>' + ph + v;
   }
 
   function printPDF() {
-    var old = document.title, st = curStudent();
-    document.title = (tab === 'sr' && st) ? 'تقرير ' + st.name + ' ' + month : 'تقرير ' + TITLE + ' ' + month;
-    function back() { document.title = old; window.removeEventListener('afterprint', back); }
+    var old = document.title, st = curStudent(), ls = null;
+    if (tab === 'mk') {
+      document.title = 'تقرير العلامات ' + TITLE + ' ' + today();
+      ls = document.createElement('style');
+      ls.textContent = '@page{size:A4 landscape}';
+      document.head.appendChild(ls);
+    } else if (tab === 'sr' && st) {
+      document.title = 'تقرير ' + st.name + ' ' + (stuAll ? 'كامل' : month);
+    } else {
+      document.title = 'تقرير ' + TITLE + ' ' + month;
+    }
+    function back() {
+      document.title = old;
+      if (ls && ls.parentNode) ls.parentNode.removeChild(ls);
+      window.removeEventListener('afterprint', back);
+    }
     window.addEventListener('afterprint', back);
     window.print();
   }
@@ -237,84 +327,11 @@
     var st = curStudent();
     if (!st) return;
     if (!st.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return; }
-    var o = stuStats(st);
+    var o = stuStats(st, false);
     var msg = 'السلام عليكم ورحمة الله،\nتقرير حضور الطالب ' + st.name + ' لشهر ' + month + ' في معهد الهلالي:\n' +
       'حاضر: ' + o.p + ' | متأخر: ' + o.l + ' | غائب: ' + o.a + '\n' +
       'نسبة الحضور: ' + o.pc + '%\n';
     if (o.ad.length) msg += 'أيام الغياب: ' + o.ad.join('، ') + '\n';
     if (o.ld.length) msg += 'أيام التأخر: ' + o.ld.join('، ') + '\n';
     msg += 'مع خالص التحية، إدارة معهد الهلالي.';
-    window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(msg), '_blank');
-  }
-
-  app.addEventListener('click', function (e) {
-    var t = e.target.closest('[data-a]');
-    if (!t) return;
-    var a = t.dataset.a, id = t.dataset.id;
-    if (a === 'wa') { sendWA(id); return; }
-    if (a === 'wr') { sendReport(); return; }
-    if (a === 'pdf') { printPDF(); return; }
-    if (a === 'tab') { tab = t.dataset.v; }
-    else if (a === 'add') {
-      var inp = document.getElementById('nm'), name = inp.value.trim();
-      var phone = digits(document.getElementById('ph').value);
-      if (!name) return;
-      db.students.push({ id: 's' + Date.now(), name: name, phone: phone }); save();
-    } else if (a === 'ph') {
-      var st = db.students.filter(function (s) { return s.id === id; })[0];
-      if (!st) return;
-      var nv = prompt('رقم ولي أمر ' + st.name + ' (مع رمز الدولة)', st.phone || '');
-      if (nv === null) return;
-      st.phone = digits(nv); save();
-    } else if (a === 'del') {
-      if (!confirm('حذف هذا الطالب؟')) return;
-      db.students = db.students.filter(function (s) { return s.id !== id; });
-      Object.keys(db.att).forEach(function (d) { delete db.att[d][id]; });
-      db.marks.forEach(function (m) { delete m.scores[id]; });
-      save();
-    } else if (a === 'set') {
-      var r = db.att[date] || (db.att[date] = {});
-      if (r[id] === t.dataset.v) delete r[id]; else r[id] = t.dataset.v;
-      if (!Object.keys(r).length) delete db.att[date];
-      save();
-    } else if (a === 'savemk') {
-      saveMarks();
-    } else if (a === 'delmk') {
-      if (!confirm('حذف هذا الامتحان وعلاماته؟')) return;
-      db.marks = db.marks.filter(function (m) { return m.id !== id; });
-      save();
-    } else if (a === 'addsub') {
-      var sn = document.getElementById('nsub'), nm2 = sn ? sn.value.trim() : '';
-      if (!nm2) return;
-      var sm = num((document.getElementById('nsubm') || {}).value);
-      if (db.subjects.indexOf(nm2) < 0) db.subjects.push(nm2);
-      if (sm && sm > 0) db.maxes[nm2] = sm;
-      save();
-      subj = nm2; exMaxFor = '';
-    } else if (a === 'setmax') {
-      var nv2 = prompt('العلامة العظمى لمادة ' + subj, db.maxes[subj] || '');
-      if (nv2 === null) return;
-      var mv = num(nv2);
-      if (!mv || mv <= 0) { alert('اكتب رقماً صحيحاً.'); return; }
-      db.maxes[subj] = mv; save(); exMaxFor = '';
-    } else if (a === 'delsub') {
-      if (!confirm('حذف مادة ' + subj + ' وكل علاماتها؟')) return;
-      var cur = subj;
-      db.subjects = db.subjects.filter(function (x) { return x !== cur; });
-      db.marks = db.marks.filter(function (m) { return m.subj !== cur; });
-      delete db.maxes[cur];
-      subj = ''; save();
-    }
-    render();
-  });
-  app.addEventListener('change', function (e) {
-    if (e.target.id === 'dt' && e.target.value) { date = e.target.value; render(); }
-    if (e.target.id === 'mo' && e.target.value) { month = e.target.value; render(); }
-    if (e.target.id === 'sel' && e.target.value) { sel = e.target.value; render(); }
-    if (e.target.id === 'sj' && e.target.value) { captureDraft(); subj = e.target.value; render(); }
-  });
-  app.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
-  });
-  render();
-})();
+    
