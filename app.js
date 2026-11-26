@@ -3,10 +3,17 @@
   var KEY = 'hilali_' + CLS, db = null;
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   if (!db || !db.students) db = { students: [], att: {} };
+  if (!db.subjects) db.subjects = TITLE.indexOf('التاسع') >= 0
+    ? ['رياضيات', 'فيزياء وكيمياء', 'علوم', 'عربي', 'انكليزي', 'فرنسي', 'اجتماعيات', 'ديانة'] : [];
+  if (!db.marks) db.marks = [];
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function today() { var d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
   function digits(s) { return String(s || '').replace(/[٠-٩]/g, function (c) { return c.charCodeAt(0) - 1632; }).replace(/\D/g, ''); }
+  function num(s) {
+    s = String(s || '').replace(/[٠-٩]/g, function (c) { return c.charCodeAt(0) - 1632; }).replace(/[٫,،]/g, '.').trim();
+    var n = parseFloat(s); return isNaN(n) ? null : n;
+  }
 
   var css = document.createElement('style');
   css.textContent =
@@ -24,6 +31,7 @@
   document.head.appendChild(css);
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
+  var subj = '', exTitle = '', exMax = '100', exDate = today(), draft = {};
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -118,14 +126,87 @@
     return h;
   }
 
+  function addSubCard(msg) {
+    return '<div class="card"><div class="name">إضافة مادة</div><div class="sub">' + msg + '</div>' +
+      '<input id="nsub" placeholder="اسم المادة" style="margin-top:8px">' +
+      '<button class="btn" data-a="addsub" style="margin-top:8px">إضافة مادة</button></div>';
+  }
+
+  function marksView() {
+    if (!db.subjects.length) return addSubCard('لا توجد مواد بعد. أضف أول مادة:');
+    if (db.subjects.indexOf(subj) < 0) subj = db.subjects[0];
+    if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    var opts = db.subjects.map(function (x) {
+      return '<option value="' + esc(x) + '"' + (x === subj ? ' selected' : '') + '>' + esc(x) + '</option>';
+    }).join('');
+    var h = '<div class="card"><select id="sj" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
+      '<input id="exn" placeholder="اسم الامتحان (مثل: مذاكرة أولى)" value="' + esc(exTitle) + '" style="margin-top:8px">' +
+      '<input id="exm" type="text" inputmode="decimal" placeholder="العلامة العظمى" value="' + esc(exMax) + '" style="margin-top:8px">' +
+      '<input id="exd" type="date" value="' + exDate + '" style="margin-top:8px"></div>';
+    h += db.students.map(function (s) {
+      var v = draft[s.id] !== undefined ? esc(draft[s.id]) : '';
+      return '<div class="card row"><div class="name">' + esc(s.name) + '</div>' +
+        '<input class="sc" data-id="' + s.id + '" type="text" inputmode="decimal" placeholder="العلامة" value="' + v + '" style="width:110px"></div>';
+    }).join('');
+    h += '<button class="btn" data-a="savemk" style="width:100%;margin-bottom:12px">حفظ العلامات</button>';
+
+    var ex = db.marks.filter(function (m) { return m.subj === subj; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    if (ex.length) {
+      h += '<div class="card"><div class="name">امتحانات ' + esc(subj) + '</div>' + ex.map(function (m) {
+        var vals = Object.keys(m.scores).map(function (k) { return m.scores[k] / m.max * 100; });
+        var avg = vals.length ? Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) : 0;
+        return '<div class="row" style="margin-top:8px"><div class="sub">' + esc(m.title) + ' · ' + m.date + ' · من ' + m.max + ' · المتوسط ' + avg + '%</div>' +
+          '<button class="btn x" data-a="delmk" data-id="' + m.id + '">حذف</button></div>';
+      }).join('') + '</div>';
+      h += db.students.map(function (s) {
+        var tot = 0, n = 0;
+        ex.forEach(function (m) { if (m.scores[s.id] !== undefined) { tot += m.scores[s.id] / m.max * 100; n++; } });
+        var pc = n ? Math.round(tot / n) : 0;
+        return '<div class="card"><div class="row"><div class="name">' + esc(s.name) + '</div><b>' + (n ? pc + '%' : '—') + '</b></div>' +
+          '<div class="sub">عدد الامتحانات: ' + n + '</div><div class="bar"><i style="width:' + pc + '%"></i></div></div>';
+      }).join('');
+    }
+    h += addSubCard('أو احذف المادة الحالية:') +
+      '<button class="btn x" data-a="delsub" style="margin-bottom:12px">حذف مادة ' + esc(subj) + '</button>';
+    return h;
+  }
+
+  function captureDraft() {
+    var t = document.getElementById('exn'); if (t) exTitle = t.value;
+    var m = document.getElementById('exm'); if (m) exMax = m.value;
+    var d = document.getElementById('exd'); if (d && d.value) exDate = d.value;
+    var inputs = app.querySelectorAll('.sc');
+    for (var i = 0; i < inputs.length; i++) draft[inputs[i].dataset.id] = inputs[i].value;
+  }
+
+  function saveMarks() {
+    captureDraft();
+    var title = exTitle.trim(), max = num(exMax);
+    if (!title) { alert('اكتب اسم الامتحان.'); return; }
+    if (!max || max <= 0) { alert('اكتب العلامة العظمى بشكل صحيح.'); return; }
+    var scores = {}, count = 0, bad = '';
+    db.students.forEach(function (s) {
+      var raw = draft[s.id];
+      if (raw === undefined || String(raw).trim() === '') return;
+      var v = num(raw);
+      if (v === null || v < 0 || v > max) { bad = s.name; return; }
+      scores[s.id] = v; count++;
+    });
+    if (bad) { alert('علامة غير صحيحة للطالب: ' + bad); return; }
+    if (!count) { alert('لم تُدخل أي علامة.'); return; }
+    db.marks.push({ id: 'm' + Date.now(), subj: subj, title: title, max: max, date: exDate, scores: scores });
+    save();
+    exTitle = ''; draft = {};
+  }
+
   function render() {
-    var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : stuView();
+    var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : stuView();
     var ph = '';
     if (tab === 'rp') ph = printHead('تقرير الصف الشهري');
     else if (tab === 'sr' && curStudent()) ph = printHead('تقرير الطالب: ' + curStudent().name);
     function n(k, t) { return '<button class="' + (tab === k ? 'on' : '') + '" data-a="tab" data-v="' + k + '">' + t + '</button>'; }
     app.innerHTML = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + '</span></div><a class="back" href="index.html">الرئيسية</a></header>' +
-      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + '</nav>' + ph + v;
+      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + '</nav>' + ph + v;
   }
 
   function printPDF() {
@@ -183,12 +264,30 @@
       if (!confirm('حذف هذا الطالب؟')) return;
       db.students = db.students.filter(function (s) { return s.id !== id; });
       Object.keys(db.att).forEach(function (d) { delete db.att[d][id]; });
+      db.marks.forEach(function (m) { delete m.scores[id]; });
       save();
     } else if (a === 'set') {
       var r = db.att[date] || (db.att[date] = {});
       if (r[id] === t.dataset.v) delete r[id]; else r[id] = t.dataset.v;
       if (!Object.keys(r).length) delete db.att[date];
       save();
+    } else if (a === 'savemk') {
+      saveMarks();
+    } else if (a === 'delmk') {
+      if (!confirm('حذف هذا الامتحان وعلاماته؟')) return;
+      db.marks = db.marks.filter(function (m) { return m.id !== id; });
+      save();
+    } else if (a === 'addsub') {
+      var sn = document.getElementById('nsub'), nm2 = sn ? sn.value.trim() : '';
+      if (!nm2) return;
+      if (db.subjects.indexOf(nm2) < 0) { db.subjects.push(nm2); save(); }
+      subj = nm2;
+    } else if (a === 'delsub') {
+      if (!confirm('حذف مادة ' + subj + ' وكل علاماتها؟')) return;
+      var cur = subj;
+      db.subjects = db.subjects.filter(function (x) { return x !== cur; });
+      db.marks = db.marks.filter(function (m) { return m.subj !== cur; });
+      subj = ''; save();
     }
     render();
   });
@@ -196,9 +295,10 @@
     if (e.target.id === 'dt' && e.target.value) { date = e.target.value; render(); }
     if (e.target.id === 'mo' && e.target.value) { month = e.target.value; render(); }
     if (e.target.id === 'sel' && e.target.value) { sel = e.target.value; render(); }
+    if (e.target.id === 'sj' && e.target.value) { captureDraft(); subj = e.target.value; render(); }
   });
   app.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
   });
   render();
-})();
+})(); 
