@@ -6,14 +6,20 @@
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function today() { var d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  function digits(s) { return String(s || '').replace(/[٠-٩]/g, function (c) { return c.charCodeAt(0) - 1632; }).replace(/\D/g, ''); }
 
   var tab = 'st', date = today(), app = document.getElementById('app');
 
   function studentsView() {
-    var h = '<div class="card row"><input id="nm" placeholder="اسم الطالب"><button class="btn" data-a="add">إضافة</button></div>';
+    var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
+      '<input id="ph" type="tel" inputmode="tel" placeholder="رقم ولي الأمر (مع رمز الدولة)" style="margin-top:8px">' +
+      '<button class="btn" data-a="add" style="margin-top:8px">إضافة</button></div>';
     if (!db.students.length) return h + '<div class="empty">لا يوجد طلاب بعد</div>';
     return h + db.students.map(function (s, i) {
-      return '<div class="card row"><div class="name">' + (i + 1) + '. ' + esc(s.name) + '</div><button class="btn x" data-a="del" data-id="' + s.id + '">حذف</button></div>';
+      var p = s.phone ? '<div class="sub" dir="ltr">' + esc(s.phone) + '</div>' : '<div class="sub">لا يوجد رقم ولي أمر</div>';
+      return '<div class="card row"><div class="name">' + (i + 1) + '. ' + esc(s.name) + p + '</div>' +
+        '<button class="btn" data-a="ph" data-id="' + s.id + '">الرقم</button> ' +
+        '<button class="btn x" data-a="del" data-id="' + s.id + '">حذف</button></div>';
     }).join('');
   }
 
@@ -56,8 +62,15 @@
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'add') {
       var inp = document.getElementById('nm'), name = inp.value.trim();
+      var phone = digits(document.getElementById('ph').value);
       if (!name) return;
-      db.students.push({ id: 's' + Date.now(), name: name }); save();
+      db.students.push({ id: 's' + Date.now(), name: name, phone: phone }); save();
+    } else if (a === 'ph') {
+      var st = db.students.filter(function (s) { return s.id === id; })[0];
+      if (!st) return;
+      var nv = prompt('رقم ولي أمر ' + st.name + ' (مع رمز الدولة)', st.phone || '');
+      if (nv === null) return;
+      st.phone = digits(nv); save();
     } else if (a === 'del') {
       if (!confirm('حذف هذا الطالب؟')) return;
       db.students = db.students.filter(function (s) { return s.id !== id; });
@@ -75,7 +88,7 @@
     if (e.target.id === 'dt' && e.target.value) { date = e.target.value; render(); }
   });
   app.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && e.target.id === 'nm') { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
+    if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
   });
   render();
 })();
