@@ -3,8 +3,11 @@
   var KEY = 'hilali_' + CLS, db = null;
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   if (!db || !db.students) db = { students: [], att: {} };
-  if (!db.subjects) db.subjects = TITLE.indexOf('التاسع') >= 0
-    ? ['رياضيات', 'فيزياء وكيمياء', 'علوم', 'عربي', 'انكليزي', 'فرنسي', 'اجتماعيات', 'ديانة'] : [];
+  var IS9 = TITLE.indexOf('التاسع') >= 0;
+  var DEF = { 'رياضيات': 300, 'فيزياء وكيمياء': 200, 'علوم': 300, 'عربي': 600, 'انكليزي': 400, 'فرنسي': 400, 'اجتماعيات': 300, 'ديانة': 200 };
+  if (!db.subjects) db.subjects = IS9 ? Object.keys(DEF) : [];
+  if (!db.maxes) db.maxes = {};
+  if (IS9) db.subjects.forEach(function (s) { if (db.maxes[s] === undefined && DEF[s] !== undefined) db.maxes[s] = DEF[s]; });
   if (!db.marks) db.marks = [];
   function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -31,7 +34,7 @@
   document.head.appendChild(css);
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exDate = today(), draft = {};
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {};
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -129,15 +132,17 @@
   function addSubCard(msg) {
     return '<div class="card"><div class="name">إضافة مادة</div><div class="sub">' + msg + '</div>' +
       '<input id="nsub" placeholder="اسم المادة" style="margin-top:8px">' +
+      '<input id="nsubm" type="text" inputmode="decimal" placeholder="علامتها العظمى (مثل 300)" style="margin-top:8px">' +
       '<button class="btn" data-a="addsub" style="margin-top:8px">إضافة مادة</button></div>';
   }
 
   function marksView() {
     if (!db.subjects.length) return addSubCard('لا توجد مواد بعد. أضف أول مادة:');
     if (db.subjects.indexOf(subj) < 0) subj = db.subjects[0];
+    if (exMaxFor !== subj) { exMax = String(db.maxes[subj] || 100); exMaxFor = subj; }
     if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var opts = db.subjects.map(function (x) {
-      return '<option value="' + esc(x) + '"' + (x === subj ? ' selected' : '') + '>' + esc(x) + '</option>';
+      return '<option value="' + esc(x) + '"' + (x === subj ? ' selected' : '') + '>' + esc(x) + (db.maxes[x] ? ' (' + db.maxes[x] + ')' : '') + '</option>';
     }).join('');
     var h = '<div class="card"><select id="sj" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
       '<input id="exn" placeholder="اسم الامتحان (مثل: مذاكرة أولى)" value="' + esc(exTitle) + '" style="margin-top:8px">' +
@@ -166,8 +171,9 @@
           '<div class="sub">عدد الامتحانات: ' + n + '</div><div class="bar"><i style="width:' + pc + '%"></i></div></div>';
       }).join('');
     }
-    h += addSubCard('أو احذف المادة الحالية:') +
-      '<button class="btn x" data-a="delsub" style="margin-bottom:12px">حذف مادة ' + esc(subj) + '</button>';
+    h += '<div class="card"><button class="btn" data-a="setmax">تعديل العلامة العظمى لمادة ' + esc(subj) + '</button> ' +
+      '<button class="btn x" data-a="delsub">حذف المادة</button></div>';
+    h += addSubCard('أضف مادة جديدة:');
     return h;
   }
 
@@ -280,13 +286,23 @@
     } else if (a === 'addsub') {
       var sn = document.getElementById('nsub'), nm2 = sn ? sn.value.trim() : '';
       if (!nm2) return;
-      if (db.subjects.indexOf(nm2) < 0) { db.subjects.push(nm2); save(); }
-      subj = nm2;
+      var sm = num((document.getElementById('nsubm') || {}).value);
+      if (db.subjects.indexOf(nm2) < 0) db.subjects.push(nm2);
+      if (sm && sm > 0) db.maxes[nm2] = sm;
+      save();
+      subj = nm2; exMaxFor = '';
+    } else if (a === 'setmax') {
+      var nv2 = prompt('العلامة العظمى لمادة ' + subj, db.maxes[subj] || '');
+      if (nv2 === null) return;
+      var mv = num(nv2);
+      if (!mv || mv <= 0) { alert('اكتب رقماً صحيحاً.'); return; }
+      db.maxes[subj] = mv; save(); exMaxFor = '';
     } else if (a === 'delsub') {
       if (!confirm('حذف مادة ' + subj + ' وكل علاماتها؟')) return;
       var cur = subj;
       db.subjects = db.subjects.filter(function (x) { return x !== cur; });
       db.marks = db.marks.filter(function (m) { return m.subj !== cur; });
+      delete db.maxes[cur];
       subj = ''; save();
     }
     render();
@@ -301,4 +317,4 @@
     if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
   });
   render();
-})(); 
+})();
