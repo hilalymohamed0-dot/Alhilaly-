@@ -11,9 +11,9 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request).then(function (r) {
+    fetch(e.request, { cache: 'reload' }).then(function (r) {
       var copy = r.clone();
-      caches.open('hilali-v2').then(function (c) { c.put(e.request, copy); });
+      caches.open('hilali-v3').then(function (c) { c.put(e.request, copy); });
       return r;
     }).catch(function () { return caches.match(e.request); })
   );
