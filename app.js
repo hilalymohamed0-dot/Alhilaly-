@@ -70,7 +70,7 @@
       var p = s.phone ? '<div class="sub" dir="ltr">' + esc(s.phone) + '</div>' : '<div class="sub">لا يوجد رقم ولي أمر</div>';
       return '<div class="card row"><div class="name">' + (i + 1) + '. ' + esc(s.name) + p + '</div>' +
         '<button class="btn" data-a="ph" data-id="' + s.id + '">الرقم</button> ' +
-        '<button class="btn x" data-a="del" data-id="' + s.id + '">حذف</button></div>';
+        (isAdmin ? '<button class="btn x" data-a="del" data-id="' + s.id + '">حذف</button>' : '') + '</div>';
     }).join('') + backupCard();
   }
 
@@ -88,8 +88,8 @@
       '<div class="sub"' + (warn ? ' style="color:#c0392b"' : '') + '>' + msg + '</div>' +
       '<div class="sub">تشمل كل الصفوف: الطلاب والحضور والعلامات.</div>' +
       '<button class="btn" data-a="backup" style="margin-top:8px">حفظ نسخة احتياطية</button> ' +
-      '<button class="btn" data-a="restore" style="margin-top:8px">استرجاع من ملف</button>' +
-      '<input type="file" id="rf" style="display:none"></div>';
+      (isAdmin ? '<button class="btn" data-a="restore" style="margin-top:8px">استرجاع من ملف</button>' : '') +
+      '<input type="file" id="rf" style="display:none"></div>' + accountCard();
   }
 
   function attView() {
@@ -272,7 +272,7 @@
         var vals = Object.keys(m.scores).map(function (k) { return m.scores[k] / m.max * 100; });
         var avg = vals.length ? Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) : 0;
         return '<div class="row" style="margin-top:8px"><div class="sub">' + esc(m.title) + ' · ' + m.date + ' · من ' + m.max + ' · المتوسط ' + avg + '%</div>' +
-          '<button class="btn x" data-a="delmk" data-id="' + m.id + '">حذف</button></div>';
+          (isAdmin ? '<button class="btn x" data-a="delmk" data-id="' + m.id + '">حذف</button>' : '') + '</div>';
       }).join('') + '</div>';
       h += db.students.map(function (s) {
         var tot = 0, n = 0;
@@ -283,7 +283,7 @@
       }).join('');
     }
     h += '<div class="card"><button class="btn" data-a="setmax">تعديل العلامة العظمى لمادة ' + esc(subj) + '</button> ' +
-      '<button class="btn x" data-a="delsub">حذف المادة</button></div>';
+      (isAdmin ? '<button class="btn x" data-a="delsub">حذف المادة</button>' : '') + '</div>';
     h += addSubCard('أضف مادة جديدة:');
     return h;
   }
@@ -317,6 +317,7 @@
   }
 
   function render() {
+    if (authState !== 'in') { app.innerHTML = authView(); return; }
     var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : stuView();
     var ph = '';
     if (tab === 'rp') ph = printHead('تقرير الصف الشهري');
@@ -599,6 +600,11 @@
     var t = e.target.closest('[data-a]');
     if (!t) return;
     var a = t.dataset.a, id = t.dataset.id;
+    if (a === 'login') { doLogin(); return; }
+    if (a === 'retry') { location.reload(); return; }
+    if (a === 'logout') { doLogout(); return; }
+    if (authState !== 'in') return;
+    if ((a === 'del' || a === 'delmk' || a === 'delsub' || a === 'restore') && !isAdmin) { alert('هذا الإجراء للإدارة فقط.'); return; }
     if (a === 'wa') { sendWA(id); return; }
     if (a === 'wr') { sendReport(); return; }
     if (a === 'pdf') { printPDF(); return; }
@@ -665,15 +671,50 @@
     if (e.target.id === 'mo' && e.target.value) { month = e.target.value; render(); }
     if (e.target.id === 'sel' && e.target.value) { sel = e.target.value; render(); }
     if (e.target.id === 'sj' && e.target.value) { captureDraft(); subj = e.target.value; render(); }
-    if (e.target.id === 'rf' && e.target.files && e.target.files[0]) { restoreFrom(e.target.files[0]); }
+    if (e.target.id === 'rf' && e.target.files && e.target.files[0] && isAdmin) { restoreFrom(e.target.files[0]); }
   });
   app.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.target.id === 'em' || e.target.id === 'pw')) { e.preventDefault(); doLogin(); return; }
     if (e.key === 'Enter' && (e.target.id === 'nm' || e.target.id === 'ph')) { e.preventDefault(); app.querySelector('[data-a="add"]').click(); }
   });
 
   // ===== المزامنة السحابية (Firestore) =====
   var FB_VER = '10.12.2', fs = null, FX = null, ready = false, syncState = '';
+  var authState = 'loading', isAdmin = false, curEmail = '', loginErr = '', loginEm = '', AU = null, ADMIN = 'admin@alhilali.app';
   var legacy = null, legacyDone = true;
+  function authView() {
+    var head = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + '</span></div><a class="back" href="index.html">الرئيسية</a></header>';
+    if (authState === 'loading') return head + '<div class="empty">جارٍ التحميل...</div>';
+    if (authState === 'error') return head + '<div class="card"><div class="name">تعذّر الاتصال</div><div class="sub">افتح التطبيق مرة بوجود إنترنت لتسجيل الدخول.</div><button class="btn" data-a="retry" style="margin-top:8px">إعادة المحاولة</button></div>';
+    return head + '<div class="card"><div class="name">تسجيل الدخول</div>' +
+      '<input id="em" dir="ltr" autocomplete="username" autocapitalize="none" placeholder="اسم المستخدم" value="' + esc(loginEm) + '" style="margin-top:8px">' +
+      '<input id="pw" dir="ltr" type="password" autocomplete="current-password" placeholder="كلمة المرور" style="margin-top:8px">' +
+      (loginErr ? '<div class="sub" style="color:#c0392b;margin-top:8px">' + loginErr + '</div>' : '') +
+      '<button class="btn" data-a="login" style="margin-top:8px">دخول</button></div>';
+  }
+  function accountCard() {
+    return '<div class="card"><div class="sub">الحساب: ' + esc(curEmail) + (isAdmin ? ' (إدارة)' : '') + '</div>' +
+      '<button class="btn" data-a="logout" style="margin-top:8px">تسجيل الخروج</button></div>';
+  }
+  function doLogin() {
+    var e = ((document.getElementById('em') || {}).value || '').trim().toLowerCase(), p = (document.getElementById('pw') || {}).value || '';
+    loginEm = e;
+    if (!e || !p) { loginErr = 'اكتب اسم المستخدم وكلمة المرور'; render(); return; }
+    if (e.indexOf('@') < 0) e += '@alhilali.app';
+    if (!AU) { loginErr = 'الخدمة غير جاهزة، أعد المحاولة بعد لحظات'; render(); return; }
+    var b = app.querySelector('[data-a="login"]'); if (b) { b.textContent = 'جارٍ الدخول...'; b.disabled = true; }
+    AU.mod.signInWithEmailAndPassword(AU.auth, e, p).then(function () { loginErr = ''; }, function (err) {
+      var c = (err && err.code) || '';
+      loginErr = c === 'auth/network-request-failed' ? 'لا يوجد اتصال بالإنترنت'
+        : c === 'auth/too-many-requests' ? 'محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة'
+        : 'اسم المستخدم أو كلمة المرور غير صحيحة';
+      render();
+    });
+  }
+  function doLogout() {
+    if (!confirm('تسجيل الخروج من هذا الجهاز؟')) return;
+    if (AU) AU.mod.signOut(AU.auth).then(function () { location.reload(); }, function () { location.reload(); });
+  }
   var shadow = {}, remote = { students: {}, marks: {}, att: {}, meta: {} }, got = {}, mstat = {};
   try { shadow = JSON.parse(localStorage.getItem('hilalisync_' + CLS)) || {}; } catch (e) { shadow = {}; }
 
@@ -828,9 +869,8 @@
     if (changed) renderIfIdle();
   }
 
-  function initSync(cfg, A, F) {
+  function initSync(a, F) {
     FX = F;
-    var a = A.initializeApp(cfg);
     try {
       fs = F.initializeFirestore(a, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) });
     } catch (e) { fs = F.getFirestore(a); }
@@ -859,18 +899,28 @@
     });
   }
 
-  function startSync() {
+  function startAuth() {
     var base = 'https://www.gstatic.com/firebasejs/' + FB_VER + '/';
     fetch('firebase-config.json', { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('no config'); return r.json(); })
       .then(function (cfg) {
-        if (!cfg || !cfg.projectId) throw new Error('bad config');
-        return Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-firestore.js')])
-          .then(function (m) { initSync(cfg, m[0], m[1]); });
+        if (!cfg || !cfg.projectId || !cfg.apiKey) throw new Error('bad config');
+        return Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-firestore.js'), import(base + 'firebase-auth.js')])
+          .then(function (m) {
+            var a = m[0].initializeApp(cfg), au = m[2].getAuth(a);
+            AU = { auth: au, mod: m[2] };
+            m[2].onAuthStateChanged(au, function (u) {
+              if (u) {
+                curEmail = u.email || ''; isAdmin = curEmail.toLowerCase() === ADMIN; authState = 'in';
+                try { if (!fs) initSync(a, m[1]); } catch (e) { console.log('sync init', e); }
+              } else { authState = 'out'; }
+              render();
+            });
+          });
       })
-      .catch(function (e) { console.log('sync off', e && e.message); });
+      .catch(function (e) { console.log('auth init', e && e.message); authState = 'error'; render(); });
   }
-  startSync();
+  startAuth();
 
   render();
 })();
