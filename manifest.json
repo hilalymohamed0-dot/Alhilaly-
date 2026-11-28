@@ -1,11 +1,17 @@
 {
   "name": "معهد الهلالي",
   "short_name": "الهلالي",
+  "description": "تطبيق معهد الهلالي لإدارة الطلاب والحضور والعلامات والتقارير",
   "lang": "ar",
   "dir": "rtl",
+  "id": "./index.html",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
+  "categories": [
+    "education"
+  ],
   "background_color": "#fefaf5",
   "theme_color": "#1a8a8a",
   "icons": [
