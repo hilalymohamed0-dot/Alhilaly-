@@ -59,7 +59,7 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '';
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '', feeFilter = 'all', feeOpen = '';
 
   function normName(x) { return String(x || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
   function parseImport(text) {
@@ -282,6 +282,124 @@
     return '<div class="card"><div class="name">ملاحظات الإدارة</div>' + items + form + '</div>';
   }
 
+  // ===== الأقساط والدفعات (بالليرة السورية) =====
+  function money(n) { return Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' ل.س'; }
+  function moneyH(n) { return '<span dir="ltr">' + money(n) + '</span>'; }
+  function feePaid(s) { return (s.pay || []).reduce(function (t, p) { return t + (p.a || 0); }, 0); }
+  function feeLeft(s) { return Math.max(0, (s.fee || 0) - feePaid(s)); }
+  function feePays(s) {
+    return (s.pay || []).slice().sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : nid(a) - nid(b); });
+  }
+  function feesView() {
+    if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    var tf = 0, tp = 0, nd = 0;
+    db.students.forEach(function (s) { tf += (s.fee || 0); tp += feePaid(s); if (feeLeft(s) > 0) nd++; });
+    var h = '<div class="card"><div class="name">ملخص الرسوم · ' + esc(TITLE) + '</div>' +
+      '<div class="row" style="margin-top:6px"><span>المبلغ الكلي</span><b>' + moneyH(tf) + '</b></div>' +
+      '<div class="row"><span>المدفوع</span><b style="color:#1a8a5a">' + moneyH(tp) + '</b></div>' +
+      '<div class="row"><span>المتبقي</span><b style="color:#c0392b">' + moneyH(Math.max(0, tf - tp)) + '</b></div>' +
+      '<div class="sub" style="margin-top:6px">عدد الطلاب الذين عليهم متبقٍ: ' + nd + '</div></div>';
+    h += '<div class="chips noprint"><button class="chip' + (feeFilter === 'all' ? ' on' : '') + '" data-a="feefilter" data-v="all">كل الطلاب</button>' +
+      '<button class="chip' + (feeFilter === 'due' ? ' on' : '') + '" data-a="feefilter" data-v="due">عليهم متبقٍ</button></div>';
+    var list = db.students.filter(function (s) { return feeFilter === 'all' || feeLeft(s) > 0; });
+    if (!list.length) return h + '<div class="empty">لا يوجد طلاب عليهم متبقٍ</div>';
+    list.forEach(function (s) {
+      var f = s.fee || 0, p = feePaid(s), l = feeLeft(s), pc = f ? Math.min(100, Math.round(p * 100 / f)) : 0;
+      var pays = feePays(s);
+      h += '<div class="card"><div class="name">' + esc(s.name) + '</div>';
+      if (!f) {
+        h += '<div class="sub">لم يُحدَّد المبلغ الكلي بعد</div>';
+      } else {
+        h += '<div class="sub">الكلي: ' + moneyH(f) + ' · المدفوع: ' + moneyH(p) + '</div>' +
+          '<div class="row"><div class="name" style="color:' + (l > 0 ? '#c0392b' : '#1a8a5a') + '">' + (l > 0 ? 'المتبقي: ' : 'مسدَّد بالكامل ✓') + (l > 0 ? moneyH(l) : '') + '</div><b>' + pc + '%</b></div>' +
+          '<div class="bar"><i style="width:' + pc + '%"></i></div>';
+      }
+      h += '<div style="margin-top:8px">' +
+        '<button class="btn" data-a="setfee" data-id="' + s.id + '">' + (f ? 'تعديل المبلغ الكلي' : 'تحديد المبلغ الكلي') + '</button> ' +
+        (f ? '<button class="btn" data-a="addpay" data-id="' + s.id + '">+ إضافة دفعة</button> ' : '') +
+        (pays.length ? '<button class="btn" data-a="feeopen" data-id="' + s.id + '">' + (feeOpen === s.id ? 'إخفاء السجل' : 'السجل (' + pays.length + ')') + '</button> ' : '') +
+        (l > 0 && f ? '<button class="btn" data-a="warem" data-id="' + s.id + '">تذكير ولي الأمر</button>' : '') + '</div>';
+      if (feeOpen === s.id) {
+        h += pays.map(function (x) {
+          return '<div class="row" style="margin-top:10px;align-items:flex-start"><div style="min-width:0"><div><b>' + moneyH(x.a) + '</b></div>' +
+            '<div class="sub"><span dir="ltr">' + esc(x.d) + '</span></div></div><div>' +
+            '<button class="btn" data-a="rcpt" data-id="' + s.id + '" data-pid="' + x.id + '">إيصال PDF</button> ' +
+            '<button class="btn x" data-a="delpay" data-id="' + s.id + '" data-pid="' + x.id + '">حذف</button></div></div>';
+        }).join('');
+      }
+      h += '</div>';
+    });
+    return h;
+  }
+  function receiptHTML(s, p) {
+    var pays = feePays(s), cum = 0;
+    for (var i = 0; i < pays.length; i++) { cum += pays[i].a || 0; if (pays[i].id === p.id) break; }
+    var left = Math.max(0, (s.fee || 0) - cum);
+    function line(k, v, c) {
+      return '<tr><td style="border:1px solid #bbb;padding:10px;background:#f3ead0;font-size:15px;width:40%">' + k + '</td>' +
+        '<td style="border:1px solid #bbb;padding:10px;font-size:16px;font-weight:bold;color:' + (c || '#1a1a1a') + '"><span style="direction:ltr;display:inline-block">' + v + '</span></td></tr>';
+    }
+    return '<div style="width:794px;box-sizing:border-box;padding:30px;background:#fff;color:#1a1a1a;direction:rtl;text-align:right;font-family:Tahoma,Arial,sans-serif">' +
+      '<div style="display:flex;align-items:center;gap:16px;border-bottom:4px solid #c9a227;padding-bottom:14px">' +
+      (logoData ? '<img src="' + logoData + '" style="width:84px;height:84px;object-fit:contain" alt=""/>' : '') +
+      '<div><div style="font-size:28px;font-weight:bold;color:#1a6f6f">معهد الهلالي</div>' +
+      '<div style="font-size:15px;margin-top:4px">' + esc(TITLE) + ' — إيصال استلام دفعة</div>' +
+      '<div style="font-size:13px;color:#666;margin-top:2px">تاريخ الإصدار: ' + today() + '</div></div></div>' +
+      '<div style="margin-top:18px;font-size:22px;font-weight:bold">الطالب: ' + esc(s.name) + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;margin-top:16px">' +
+      line('تاريخ الدفعة', esc(p.d)) +
+      line('المبلغ المستلَم', money(p.a), '#1a8a5a') +
+      line('المبلغ الكلي للرسوم', money(s.fee || 0)) +
+      line('مجموع المدفوع حتى هذه الدفعة', money(cum)) +
+      line('المتبقي', left > 0 ? money(left) : 'لا يوجد (مسدَّد بالكامل)', left > 0 ? '#c0392b' : '#1a8a5a') +
+      '</table>' +
+      '<div style="margin-top:36px;font-size:14px">توقيع الإدارة: ____________________</div>' +
+      '<div style="margin-top:26px;border-top:1px solid #ddd;padding-top:10px;font-size:12px;color:#777;text-align:center">إدارة معهد الهلالي</div></div>';
+  }
+  function makeHtmlPDF(html) {
+    return htmlToCanvas(html).then(function (cv) {
+      var cw = cv.width, ch = cv.height, pageH = Math.round(cw * 841.89 / 595.28), pages = [];
+      for (var y = 0; y < ch; y += pageH) {
+        var sh = Math.min(pageH, ch - y);
+        var c2 = document.createElement('canvas'); c2.width = cw; c2.height = sh;
+        var x2 = c2.getContext('2d'); x2.fillStyle = '#fff'; x2.fillRect(0, 0, cw, sh);
+        x2.drawImage(cv, 0, y, cw, sh, 0, 0, cw, sh);
+        pages.push({ d: b64ToU8(c2.toDataURL('image/jpeg', 0.92).split(',')[1]), w: cw, h: sh });
+      }
+      return buildPDF(pages);
+    });
+  }
+  function sendReceipt(btn, sid, pid) {
+    var s = db.students.filter(function (x) { return x.id === sid; })[0];
+    var p = s && (s.pay || []).filter(function (x) { return x.id === pid; })[0];
+    if (!s || !p) return;
+    var old = btn.textContent;
+    btn.textContent = 'جارٍ التجهيز...'; btn.disabled = true;
+    function done() { btn.textContent = old; btn.disabled = false; }
+    makeHtmlPDF(receiptHTML(s, p)).then(function (blob) {
+      var fname = 'إيصال ' + s.name.replace(/[\\\/:*?"<>|]/g, ' ') + ' ' + p.d + '.pdf';
+      var file = null;
+      try { file = new File([blob], fname, { type: 'application/pdf' }); } catch (e) {}
+      var text = 'السلام عليكم ورحمة الله،\nإيصال استلام دفعة بقيمة ' + money(p.a) + ' للطالب ' + s.name + ' في معهد الهلالي.';
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        return navigator.share({ files: [file], title: fname, text: text }).catch(function (e) {
+          if (!e || e.name !== 'AbortError') throw e;
+        });
+      }
+      downloadBlob(blob, fname);
+      alert('تم حفظ الإيصال في جوالك (التنزيلات). أرفقه في واتساب مع ولي الأمر.');
+      if (s.phone) window.open('https://wa.me/' + s.phone + '?text=' + encodeURIComponent(text), '_blank');
+    }).then(done, function () { done(); alert('تعذّر إنشاء الإيصال. حاول مرة أخرى.'); });
+  }
+  function sendFeeRemind(id) {
+    var s = db.students.filter(function (x) { return x.id === id; })[0];
+    if (!s) return;
+    if (!s.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return; }
+    var msg = 'السلام عليكم ورحمة الله،\nنذكّركم بأن المتبقي من رسوم الطالب ' + s.name + ' في معهد الهلالي هو ' + money(feeLeft(s)) +
+      ' (المدفوع ' + money(feePaid(s)) + ' من أصل ' + money(s.fee || 0) + ').\nمع خالص التحية، إدارة معهد الهلالي.';
+    window.open('https://wa.me/' + s.phone + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+
   function stuView() {
     if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var s = curStudent();
@@ -420,14 +538,14 @@
 
   function render() {
     if (authState !== 'in') { app.innerHTML = authView(); return; }
-    var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : stuView();
+    var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : tab === 'fe' ? feesView() : stuView();
     var ph = '';
     if (tab === 'rp') ph = printHead('تقرير الصف الشهري');
     else if (tab === 'sr' && curStudent()) ph = printHead('تقرير الطالب: ' + curStudent().name, false, stuAll ? 'كل المدة' : 'الشهر: ' + month);
     else if (tab === 'mk' && mkmode === 'rep') ph = printHead('تقرير العلامات', true);
     function n(k, t) { return '<button class="' + (tab === k ? 'on' : '') + '" data-a="tab" data-v="' + k + '">' + t + '</button>'; }
     app.innerHTML = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + cloudHTML() + '</span></div><a class="back" href="index.html">الرئيسية</a></header>' +
-      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + '</nav>' + ph + v;
+      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + n('fe', 'الأقساط') + '</nav>' + ph + v;
   }
 
   function reportHTML(s, all) {
@@ -759,13 +877,15 @@
     if (a === 'retry') { location.reload(); return; }
     if (a === 'logout') { doLogout(); return; }
     if (authState !== 'in') return;
-    if ((a === 'del' || a === 'delmk' || a === 'delsub' || a === 'restore') && !isAdmin) { alert('هذا الإجراء للإدارة فقط.'); return; }
+    if ((a === 'del' || a === 'delmk' || a === 'delsub' || a === 'delpay' || a === 'restore') && !isAdmin) { alert('هذا الإجراء للإدارة فقط.'); return; }
     if (a === 'wa') { sendWA(id); return; }
     if (a === 'wmk') { sendMarks(); return; }
     if (a === 'wawarn') { sendWarn(id); return; }
     if (a === 'wasend') { if (sendWA(id)) markSent(id); render(); return; }
     if (a === 'wanext') { var nxs = bulkNext(); if (nxs && sendWA(nxs.id)) markSent(nxs.id); render(); return; }
     if (a === 'wr') { sendReport(); return; }
+    if (a === 'rcpt') { sendReceipt(t, id, t.dataset.pid); return; }
+    if (a === 'warem') { sendFeeRemind(id); return; }
     if (a === 'pdf') { printPDF(); return; }
     if (a === 'sendpdf') { sendPDF(t); return; }
     if (a === 'backup') { makeBackup(); return; }
@@ -792,6 +912,34 @@
       var base = Date.now();
       add.forEach(function (r, i) { db.students.push({ id: 's' + (base + i), name: r.name, phone: r.phone }); });
       impDraft = ''; impOpen = false; save();
+    }
+    else if (a === 'feefilter') { feeFilter = t.dataset.v; }
+    else if (a === 'feeopen') { feeOpen = (feeOpen === id) ? '' : id; }
+    else if (a === 'setfee') {
+      var sf = db.students.filter(function (x) { return x.id === id; })[0];
+      if (!sf) return;
+      var fv = prompt('المبلغ الكلي لرسوم ' + sf.name + ' (بالليرة السورية)', sf.fee || '');
+      if (fv === null) return;
+      var fn = num(fv);
+      if (!fn || fn <= 0) { alert('اكتب مبلغاً صحيحاً.'); return; }
+      sf.fee = fn; save();
+    }
+    else if (a === 'addpay') {
+      var sp = db.students.filter(function (x) { return x.id === id; })[0];
+      if (!sp) return;
+      var pv = prompt('مبلغ الدفعة من ' + sp.name + ' (بالليرة السورية)\nالمتبقي الآن: ' + money(feeLeft(sp)), '');
+      if (pv === null) return;
+      var pn = num(pv);
+      if (!pn || pn <= 0) { alert('اكتب مبلغاً صحيحاً.'); return; }
+      if (pn > feeLeft(sp) && !confirm('المبلغ أكبر من المتبقي (' + money(feeLeft(sp)) + '). تسجيله على أي حال؟')) return;
+      (sp.pay || (sp.pay = [])).push({ id: 'p' + Date.now(), d: today(), a: pn });
+      feeOpen = sp.id; save();
+    }
+    else if (a === 'delpay') {
+      var sd = db.students.filter(function (x) { return x.id === id; })[0];
+      if (!sd || !confirm('حذف هذه الدفعة؟')) return;
+      sd.pay = (sd.pay || []).filter(function (x) { return x.id !== t.dataset.pid; });
+      save();
     }
     else if (a === 'notekind') { noteKind = t.dataset.v; }
     else if (a === 'addnote') {
