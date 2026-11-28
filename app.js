@@ -98,6 +98,15 @@
     var h = '<div class="card"><input type="date" id="dt" value="' + date + '"></div>' +
       '<div class="sum"><div><b>' + c.p + '</b>حاضر</div><div><b>' + c.l + '</b>متأخر</div><div><b>' + c.a + '</b>غائب</div></div>';
     if (!db.students.length) return h + '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    var ym = date.slice(0, 7), am = monthAbsMap(ym);
+    var fl = db.students.filter(function (s) { return (am[s.id] || 0) >= ABS_LIMIT; });
+    if (fl.length) {
+      h += '<div class="card alert noprint"><div class="name">⚠️ غياب متكرر هذا الشهر</div><div class="sub">طلاب غابوا ' + ABS_LIMIT + ' مرات أو أكثر خلال ' + ym + '</div>' +
+        fl.map(function (s) {
+          return '<div class="row brow"><div class="name">' + esc(s.name) + '<div class="sub">غاب ' + am[s.id] + ' مرات</div></div>' +
+            (s.phone ? '<button class="btn" data-a="wawarn" data-id="' + s.id + '">تنبيه ولي الأمر</button>' : '<span class="sub warn">لا يوجد رقم</span>') + '</div>';
+        }).join('') + '</div>';
+    }
     var bl = bulkList();
     if (bl.length) {
       var sent = getSent(), done = bl.filter(function (s) { return sent[s.id] === r[s.id]; }).length, nx = bulkNext();
@@ -119,7 +128,7 @@
       function b(v, t) { return '<button class="' + v + (r[s.id] === v ? ' on' : '') + '" data-a="set" data-id="' + s.id + '" data-v="' + v + '">' + t + '</button>'; }
       var wa = (r[s.id] === 'a' || r[s.id] === 'l')
         ? '<button class="btn" data-a="wa" data-id="' + s.id + '" style="margin-top:8px">إرسال واتساب لولي الأمر</button>' : '';
-      return '<div class="card"><div class="row"><div class="name">' + esc(s.name) + '</div><div class="st">' + b('p', 'حاضر') + b('l', 'متأخر') + b('a', 'غائب') + '</div></div>' + wa + '</div>';
+      return '<div class="card"><div class="row"><div class="name">' + esc(s.name) + ((am[s.id] || 0) >= ABS_LIMIT ? ' <span class="dp no">غاب ' + am[s.id] + '</span>' : '') + '</div><div class="st">' + b('p', 'حاضر') + b('l', 'متأخر') + b('a', 'غائب') + '</div></div>' + wa + '</div>';
     }).join('');
   }
 
@@ -179,6 +188,34 @@
     return n ? Math.round(tot / n) : null;
   }
 
+  var ABS_LIMIT = 3;
+  function genAvg(sid) {
+    var t = 0, n = 0;
+    db.subjects.forEach(function (sj) { var av = subjAvg(sid, sj); if (av !== null) { t += av; n++; } });
+    return n ? Math.round(t / n) : null;
+  }
+  function rankIn(vals, v) { var r = 1; vals.forEach(function (x) { if (x > v) r++; }); return r; }
+  function genRank(sid) {
+    var mine = genAvg(sid); if (mine === null) return null;
+    var all = db.students.map(function (s) { return genAvg(s.id); }).filter(function (x) { return x !== null; });
+    return { r: rankIn(all, mine), n: all.length };
+  }
+  function subjRank(sid, sj) {
+    var mine = subjAvg(sid, sj); if (mine === null) return null;
+    var all = db.students.map(function (s) { return subjAvg(s.id, sj); }).filter(function (x) { return x !== null; });
+    return { r: rankIn(all, mine), n: all.length };
+  }
+  function rk(o) { return o ? o.r + '/' + o.n : ''; }
+  function monthAbsMap(ym) {
+    var m = {};
+    Object.keys(db.att).forEach(function (d) {
+      if (d.slice(0, 7) !== ym) return;
+      var r = db.att[d] || {};
+      Object.keys(r).forEach(function (id) { if (r[id] === 'a') m[id] = (m[id] || 0) + 1; });
+    });
+    return m;
+  }
+
   function stuMarks(s) {
     var rows = '', tot = 0, n = 0;
     db.subjects.forEach(function (sj) {
@@ -191,13 +228,13 @@
         return esc(m.title) + ' (' + m.date + '): ' + m.scores[s.id] + ' / ' + m.max;
       }).join('<br>');
       rows += '<tr><td class="nm">' + esc(sj) + '</td><td class="ls">' + list + '</td>' +
-        '<td><b' + (av < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + av + '%</b></td></tr>';
+        '<td><b' + (av < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + av + '%</b></td><td>' + rk(subjRank(s.id, sj)) + '</td></tr>';
     });
     if (!n) return '<div class="card"><div class="name">العلامات</div><div class="sub">لا توجد علامات مسجلة لهذا الطالب</div></div>';
     var g = Math.round(tot / n);
-    return '<div class="mtable card"><div class="name" style="margin-bottom:8px">العلامات</div><table><thead><tr><th>المادة</th><th>الامتحانات</th><th>المتوسط</th></tr></thead><tbody>' +
-      rows + '<tr><td class="nm"><b>المعدل العام</b></td><td></td><td><b' + (g < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + g + '%</b></td></tr>' +
-      '</tbody></table></div>';
+    return '<div class="mtable card"><div class="name" style="margin-bottom:8px">العلامات</div><table><thead><tr><th>المادة</th><th>الامتحانات</th><th>المتوسط</th><th>الترتيب</th></tr></thead><tbody>' +
+      rows + '<tr><td class="nm"><b>المعدل العام</b></td><td></td><td><b' + (g < 50 ? ' class="low" style="color:#c0392b"' : '') + '>' + g + '%</b></td><td><b>' + rk(genRank(s.id)) + '</b></td></tr>' +
+      '</tbody></table><button class="btn noprint" data-a="wmk" style="margin-top:10px;width:100%">إرسال العلامات لولي الأمر</button></div>';
   }
 
   function stuView() {
@@ -387,13 +424,14 @@
       }).join('<br/>');
       rows += '<tr><td style="' + td + ';font-weight:bold">' + esc(sj) + (db.maxes[sj] ? ' <span style="color:#777;font-weight:normal">(' + db.maxes[sj] + ')</span>' : '') + '</td>' +
         '<td style="' + td + ';line-height:1.8">' + list + '</td>' +
-        '<td style="' + td + ';text-align:center;font-weight:bold;color:' + (av < 50 ? '#c0392b' : '#1a1a1a') + '">' + av + '%</td></tr>';
+        '<td style="' + td + ';text-align:center;font-weight:bold;color:' + (av < 50 ? '#c0392b' : '#1a1a1a') + '">' + av + '%</td>' +
+        '<td style="' + td + ';text-align:center">' + rk(subjRank(s.id, sj)) + '</td></tr>';
     });
     var marks;
     if (n) {
       var g = Math.round(tot / n);
-      marks = '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">المادة</th><th style="' + th + '">الامتحانات والعلامات</th><th style="' + th + '">المتوسط</th></tr></thead><tbody>' + rows +
-        '<tr><td style="' + td + ';font-weight:bold" colspan="2">المعدل العام</td><td style="' + td + ';text-align:center;font-weight:bold;color:' + (g < 50 ? '#c0392b' : '#1a1a1a') + '">' + g + '%</td></tr></tbody></table>';
+      marks = '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="' + th + '">المادة</th><th style="' + th + '">الامتحانات والعلامات</th><th style="' + th + '">المتوسط</th><th style="' + th + '">الترتيب</th></tr></thead><tbody>' + rows +
+        '<tr><td style="' + td + ';font-weight:bold" colspan="2">المعدل العام</td><td style="' + td + ';text-align:center;font-weight:bold;color:' + (g < 50 ? '#c0392b' : '#1a1a1a') + '">' + g + '%</td><td style="' + td + ';text-align:center;font-weight:bold">' + rk(genRank(s.id)) + '</td></tr></tbody></table>';
     } else {
       marks = '<div style="font-size:13px;color:#555">لا توجد علامات مسجلة</div>';
     }
@@ -616,6 +654,33 @@
     return bulkList().filter(function (s) { return s.phone && sent[s.id] !== r[s.id]; })[0];
   }
 
+  function sendMarks() {
+    var st = curStudent();
+    if (!st) return;
+    if (!st.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return; }
+    var lines = [], low = [];
+    db.subjects.forEach(function (sj) {
+      var av = subjAvg(st.id, sj);
+      if (av === null) return;
+      lines.push(sj + ': ' + av + '%');
+      if (av < 50) low.push(sj);
+    });
+    if (!lines.length) { alert('لا توجد علامات مسجلة لهذا الطالب.'); return; }
+    var gr = genRank(st.id);
+    var msg = 'السلام عليكم ورحمة الله،\nكشف علامات الطالب ' + st.name + ' في معهد الهلالي (' + TITLE + '):\n' + lines.join('\n') +
+      '\nالمعدل العام: ' + genAvg(st.id) + '%' + (gr ? ' · الترتيب ' + gr.r + ' من ' + gr.n : '') + '\n' +
+      (low.length ? 'مواد تحتاج متابعة: ' + low.join('، ') + '\n' : '') + 'مع خالص التحية، إدارة معهد الهلالي.';
+    window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+  function sendWarn(id) {
+    var st = db.students.filter(function (s) { return s.id === id; })[0];
+    if (!st) return;
+    if (!st.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return; }
+    var ym = date.slice(0, 7), n = monthAbsMap(ym)[id] || 0;
+    var msg = 'السلام عليكم ورحمة الله،\nنود إعلامكم بأن الطالب ' + st.name + ' تغيّب ' + n + ' مرات خلال شهر ' + ym + ' في معهد الهلالي.\nنرجو المتابعة والتواصل مع الإدارة عند الحاجة.\nمع خالص التحية، إدارة معهد الهلالي.';
+    window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+
   function sendReport() {
     var st = curStudent();
     if (!st) return;
@@ -640,6 +705,8 @@
     if (authState !== 'in') return;
     if ((a === 'del' || a === 'delmk' || a === 'delsub' || a === 'restore') && !isAdmin) { alert('هذا الإجراء للإدارة فقط.'); return; }
     if (a === 'wa') { sendWA(id); return; }
+    if (a === 'wmk') { sendMarks(); return; }
+    if (a === 'wawarn') { sendWarn(id); return; }
     if (a === 'wasend') { if (sendWA(id)) markSent(id); render(); return; }
     if (a === 'wanext') { var nxs = bulkNext(); if (nxs && sendWA(nxs.id)) markSent(nxs.id); render(); return; }
     if (a === 'wr') { sendReport(); return; }
