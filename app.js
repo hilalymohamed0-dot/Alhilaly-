@@ -59,12 +59,35 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '';
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '';
+
+  function normName(x) { return String(x || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function parseImport(text) {
+    var out = [];
+    String(text || '').split(/\r?\n/).forEach(function (raw) {
+      var line = raw.replace(/[٠-٩]/g, function (c) { return c.charCodeAt(0) - 1632; }).replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
+      if (!line) return;
+      line = line.replace(/^\d{1,3}\s*[.\-)]\s+/, '');
+      var phone = '', m = line.match(/\+?\d[\d\s\-]{5,}\d/g);
+      if (m) { var last = m[m.length - 1]; phone = digits(last); line = line.replace(last, ' '); }
+      var name = line.replace(/[,;،؛\t|]+/g, ' ').replace(/^[\s\-:]+|[\s\-:]+$/g, '').replace(/\s+/g, ' ').trim();
+      if (name) out.push({ name: name, phone: phone });
+    });
+    return out;
+  }
+  function importCard() {
+    if (!impOpen) return '<div class="card"><button class="btn" data-a="impopen">استيراد قائمة طلاب دفعة واحدة</button></div>';
+    return '<div class="card"><div class="name">استيراد قائمة طلاب</div>' +
+      '<div class="sub">ألصق القائمة، كل طالب في سطر: الاسم ثم رقم ولي الأمر (مع رمز الدولة). الرقم اختياري.<br>مثال: أحمد محمد 963944123456</div>' +
+      '<textarea id="imp" placeholder="أحمد محمد 963944123456&#10;سارة علي 963955987654" style="width:100%;box-sizing:border-box;min-height:140px;margin-top:8px;padding:10px;border-radius:10px;border:1px solid rgba(128,128,128,.5);background:inherit;color:inherit;font:inherit">' + esc(impDraft) + '</textarea>' +
+      '<div class="row" style="margin-top:8px"><button class="btn" data-a="impgo">استيراد</button><button class="btn x" data-a="impopen">إلغاء</button></div></div>';
+  }
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
       '<input id="ph" type="tel" inputmode="tel" placeholder="رقم ولي الأمر (مع رمز الدولة)" style="margin-top:8px">' +
       '<button class="btn" data-a="add" style="margin-top:8px">إضافة</button></div>';
+    h += importCard();
     if (!db.students.length) return h + '<div class="empty">لا يوجد طلاب بعد</div>' + backupCard();
     return h + db.students.map(function (s, i) {
       var p = s.phone ? '<div class="sub" dir="ltr">' + esc(s.phone) + '</div>' : '<div class="sub">لا يوجد رقم ولي أمر</div>';
@@ -730,6 +753,7 @@
     var t = e.target.closest('[data-a]');
     if (!t) return;
     var nt0 = document.getElementById('nt'); if (nt0) noteDraft = nt0.value;
+    var im0 = document.getElementById('imp'); if (im0) impDraft = im0.value;
     var a = t.dataset.a, id = t.dataset.id;
     if (a === 'login') { doLogin(); return; }
     if (a === 'retry') { location.reload(); return; }
@@ -752,6 +776,23 @@
     else if (a === 'pick') { captureDraft(); subj = t.dataset.v; }
     else if (a === 'stuopen') { stuOpen = !stuOpen; }
     else if (a === 'pickstu') { sel = id; stuOpen = false; }
+    else if (a === 'impopen') { impOpen = !impOpen; }
+    else if (a === 'impgo') {
+      var rows = parseImport(impDraft);
+      if (!rows.length) { alert('ألصق قائمة الطلاب أولاً.'); return; }
+      var seen = {}, add = [], dup = 0, nop = 0;
+      db.students.forEach(function (x) { seen[normName(x.name)] = 1; });
+      rows.forEach(function (r) {
+        var k = normName(r.name);
+        if (seen[k]) { dup++; return; }
+        seen[k] = 1; add.push(r); if (!r.phone) nop++;
+      });
+      if (!add.length) { alert('كل الأسماء موجودة مسبقاً (' + dup + ').'); return; }
+      if (!confirm('سيتم إضافة ' + add.length + ' طالب' + (nop ? ' (بينهم ' + nop + ' بلا رقم)' : '') + (dup ? ' وتخطي ' + dup + ' مكرر' : '') + '. متابعة؟')) return;
+      var base = Date.now();
+      add.forEach(function (r, i) { db.students.push({ id: 's' + (base + i), name: r.name, phone: r.phone }); });
+      impDraft = ''; impOpen = false; save();
+    }
     else if (a === 'notekind') { noteKind = t.dataset.v; }
     else if (a === 'addnote') {
       var stn = curStudent(), ntx = (noteDraft || '').trim();
