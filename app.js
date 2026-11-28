@@ -27,6 +27,7 @@
 
   var css = document.createElement('style');
   css.textContent =
+    'nav{overflow-x:auto;-webkit-overflow-scrolling:touch}nav button{flex:1 0 auto;white-space:nowrap;padding-left:12px;padding-right:12px}' +
     '.mtable{overflow-x:auto}' +
     '.mtable table{width:100%;border-collapse:collapse;font-size:13px}' +
     '.mtable th,.mtable td{border:1px solid rgba(128,128,128,.5);padding:6px 4px;text-align:center}' +
@@ -59,7 +60,7 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '', feeFilter = 'all', feeOpen = '';
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '', feeFilter = 'all', feeOpen = '', annKind = 'exam', annTitle = '', annD1 = '', annD2 = '', annText = '';
 
   function normName(x) { return String(x || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
   function parseImport(text) {
@@ -400,6 +401,67 @@
     window.open('https://wa.me/' + s.phone + '?text=' + encodeURIComponent(msg), '_blank');
   }
 
+  // ===== الإعلان الجماعي لأولياء الأمور =====
+  var ANK = { exam: { t: 'امتحان', i: '📝' }, hol: { t: 'عطلة', i: '🏖️' }, alert: { t: 'تنبيه هام', i: '⚠️' } };
+  function arDate(d) {
+    if (!d) return '';
+    try { return new Date(d + 'T12:00:00').toLocaleDateString('ar-SY-u-nu-latn', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
+    catch (e) { return d; }
+  }
+  function annGen() {
+    var t = (annTitle || '').trim(), d1 = arDate(annD1), d2 = arDate(annD2), m = '';
+    if (annKind === 'exam') {
+      m = 'نود إعلامكم بموعد امتحان' + (t ? ' ' + t : '') + (d1 ? ' وذلك يوم ' + d1 : '') + '. نرجو التأكد من حضور الطالب في الوقت المحدد وجاهزيته للامتحان.';
+    } else if (annKind === 'hol') {
+      m = 'نعلمكم بأن المعهد سيكون في عطلة' + (t ? ' (' + t + ')' : '') + (d1 ? (d2 ? ' من ' + d1 + ' إلى ' + d2 : ' يوم ' + d1) : '') + '، ويعود الدوام بإذن الله بعد ذلك.';
+    } else {
+      m = 'تنبيه هام: ' + (t || '') + (d1 ? ' (بتاريخ ' + d1 + ')' : '') + '\nنرجو الاطلاع والتقيد بما ورد.';
+    }
+    annText = m;
+  }
+  function annMsg(s) {
+    return 'السلام عليكم ورحمة الله،\nولي أمر الطالب ' + s.name + '،\n' + annText.trim() + '\nمع خالص التحية، إدارة معهد الهلالي.';
+  }
+  function annKey() {
+    var h = 0, x = annText.trim();
+    for (var i = 0; i < x.length; i++) { h = (h * 31 + x.charCodeAt(i)) | 0; }
+    return 'hl_ann_' + CLS + '_' + h;
+  }
+  function annSent() { try { return JSON.parse(localStorage.getItem(annKey()) || '{}'); } catch (e) { return {}; } }
+  function annMark(id) { var o = annSent(); o[id] = 1; try { localStorage.setItem(annKey(), JSON.stringify(o)); } catch (e) {} }
+  function annNext() { var sent = annSent(); return db.students.filter(function (s) { return s.phone && !sent[s.id]; })[0]; }
+  function captureAnn() {
+    var a = document.getElementById('at1'); if (a) annTitle = a.value;
+    a = document.getElementById('ad1'); if (a) annD1 = a.value;
+    a = document.getElementById('ad2'); if (a) annD2 = a.value;
+    a = document.getElementById('ax'); if (a) annText = a.value;
+  }
+  function annView() {
+    if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    var kinds = '<div class="chips noprint">' + Object.keys(ANK).map(function (k) {
+      return '<button class="chip' + (annKind === k ? ' on' : '') + '" data-a="annkind" data-v="' + k + '">' + ANK[k].i + ' ' + ANK[k].t + '</button>';
+    }).join('') + '</div>';
+    var tph = annKind === 'exam' ? 'المادة (مثال: الرياضيات)' : annKind === 'hol' ? 'سبب العطلة (اختياري)' : 'نص التنبيه';
+    var ta = 'width:100%;box-sizing:border-box;margin-top:8px;padding:10px;border-radius:10px;border:1px solid rgba(128,128,128,.5);background:inherit;color:inherit;font:inherit';
+    var h = '<div class="card"><div class="name">إعلان لأولياء أمور ' + esc(TITLE) + '</div>' + kinds +
+      '<input id="at1" placeholder="' + tph + '" value="' + esc(annTitle) + '" style="margin-top:8px">' +
+      '<div class="sub" style="margin-top:8px">' + (annKind === 'hol' ? 'من تاريخ' : 'التاريخ') + '</div><input type="date" id="ad1" value="' + esc(annD1) + '">' +
+      (annKind === 'hol' ? '<div class="sub" style="margin-top:8px">إلى تاريخ (اختياري)</div><input type="date" id="ad2" value="' + esc(annD2) + '">' : '') +
+      '<button class="btn" data-a="anngen" style="margin-top:8px;width:100%">تعبئة الرسالة تلقائياً</button>' +
+      '<textarea id="ax" placeholder="نص الإعلان... (يمكنك تعديله بحرية)" style="' + ta + ';min-height:130px">' + esc(annText) + '</textarea></div>';
+    if (!annText.trim()) return h;
+    var wp = db.students.filter(function (s) { return s.phone; }), np = db.students.filter(function (s) { return !s.phone; });
+    var sent = annSent(), done = wp.filter(function (s) { return sent[s.id]; }).length, nx = annNext();
+    h += '<div class="card"><div class="name">معاينة الرسالة</div><div class="sub" style="margin-top:6px;line-height:1.8">' + noteHtml(annMsg(db.students[0])) + '</div></div>';
+    h += '<div class="card"><div class="name">الإرسال</div><div class="sub">تم الإرسال لـ ' + done + ' من ' + wp.length + ' ولي أمر</div>' +
+      '<div class="bar"><i style="width:' + (wp.length ? Math.round(done * 100 / wp.length) : 0) + '%"></i></div>' +
+      '<div style="margin-top:8px">' +
+      (nx ? '<button class="btn" data-a="annnext" style="width:100%">إرسال إلى: ' + esc(nx.name) + '</button>' : '<div class="sub" style="color:#1a8a5a">✓ تم الإرسال للجميع</div>') +
+      (done ? '<button class="btn x" data-a="annreset" style="margin-top:8px">إعادة الإرسال من البداية</button>' : '') + '</div>' +
+      (np.length ? '<div class="sub" style="margin-top:8px;color:#c0392b">بلا رقم ولي أمر (' + np.length + '): ' + np.map(function (s) { return esc(s.name); }).join('، ') + '</div>' : '') + '</div>';
+    return h;
+  }
+
   function stuView() {
     if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var s = curStudent();
@@ -538,14 +600,14 @@
 
   function render() {
     if (authState !== 'in') { app.innerHTML = authView(); return; }
-    var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : tab === 'fe' ? feesView() : stuView();
+    var v = tab === 'st' ? studentsView() : tab === 'at' ? attView() : tab === 'rp' ? repView() : tab === 'mk' ? marksView() : tab === 'fe' ? feesView() : tab === 'an' ? annView() : stuView();
     var ph = '';
     if (tab === 'rp') ph = printHead('تقرير الصف الشهري');
     else if (tab === 'sr' && curStudent()) ph = printHead('تقرير الطالب: ' + curStudent().name, false, stuAll ? 'كل المدة' : 'الشهر: ' + month);
     else if (tab === 'mk' && mkmode === 'rep') ph = printHead('تقرير العلامات', true);
     function n(k, t) { return '<button class="' + (tab === k ? 'on' : '') + '" data-a="tab" data-v="' + k + '">' + t + '</button>'; }
     app.innerHTML = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + cloudHTML() + '</span></div><a class="back" href="index.html">الرئيسية</a></header>' +
-      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + n('fe', 'الأقساط') + '</nav>' + ph + v;
+      '<nav>' + n('st', 'الطلاب') + n('at', 'الحضور') + n('rp', 'التقرير') + n('sr', 'طالب') + n('mk', 'علامات') + n('fe', 'الأقساط') + n('an', 'إعلان') + '</nav>' + ph + v;
   }
 
   function reportHTML(s, all) {
@@ -872,6 +934,7 @@
     if (!t) return;
     var nt0 = document.getElementById('nt'); if (nt0) noteDraft = nt0.value;
     var im0 = document.getElementById('imp'); if (im0) impDraft = im0.value;
+    captureAnn();
     var a = t.dataset.a, id = t.dataset.id;
     if (a === 'login') { doLogin(); return; }
     if (a === 'retry') { location.reload(); return; }
@@ -913,6 +976,16 @@
       add.forEach(function (r, i) { db.students.push({ id: 's' + (base + i), name: r.name, phone: r.phone }); });
       impDraft = ''; impOpen = false; save();
     }
+    else if (a === 'annkind') { annKind = t.dataset.v; }
+    else if (a === 'anngen') { annGen(); }
+    else if (a === 'annnext') {
+      if (!annText.trim()) return;
+      var anx = annNext();
+      if (!anx) { alert('تم الإرسال للجميع.'); return; }
+      window.open('https://wa.me/' + anx.phone + '?text=' + encodeURIComponent(annMsg(anx)), '_blank');
+      annMark(anx.id);
+    }
+    else if (a === 'annreset') { if (!confirm('إعادة الإرسال للجميع من البداية؟')) return; try { localStorage.removeItem(annKey()); } catch (e) {} }
     else if (a === 'feefilter') { feeFilter = t.dataset.v; }
     else if (a === 'feeopen') { feeOpen = (feeOpen === id) ? '' : id; }
     else if (a === 'setfee') {
