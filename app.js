@@ -60,7 +60,7 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '', feeFilter = 'all', feeOpen = '', annKind = 'exam', annTitle = '', annD1 = '', annD2 = '', annText = '';
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '', impOpen = false, impDraft = '', feeFilter = 'all', feeOpen = '', annKind = 'exam', annTitle = '', annD1 = '', annD2 = '', annText = '', certKind = 'top', certText = '';
 
   function normName(x) { return String(x || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
   function parseImport(text) {
@@ -462,6 +462,63 @@
     return h;
   }
 
+  // ===== شهادات التقدير =====
+  var CK = { top: { t: 'تفوق دراسي', i: '🏆' }, reg: { t: 'انتظام بالحضور', i: '📅' }, good: { t: 'سلوك مميز', i: '🌟' }, thanks: { t: 'شكر وتقدير', i: '🎖️' } };
+  function certAuto(s) {
+    if (certKind === 'top') { var g = genAvg(s.id); return 'وذلك لتفوقه الدراسي' + (g !== null ? ' وحصوله على معدل عام قدره ' + g + '%' : '') + '، متمنين له دوام النجاح والتوفيق.'; }
+    if (certKind === 'reg') { var o = stuStats(s, false); return 'وذلك لانتظامه في الحضور' + (o.t ? ' بنسبة ' + o.pc + '% خلال شهر ' + month : '') + '، متمنين له دوام النجاح والتوفيق.'; }
+    if (certKind === 'good') return 'وذلك لحسن سلوكه وأخلاقه الحميدة وتعامله الراقي مع زملائه ومعلميه، متمنين له دوام النجاح والتوفيق.';
+    return 'وذلك لجهوده المبذولة وإسهامه الطيب في المعهد، متمنين له دوام النجاح والتوفيق.';
+  }
+  function certHTML(s, text) {
+    var gold = '#c9a227', teal = '#1a6f6f';
+    return '<div style="width:794px;height:1122px;box-sizing:border-box;padding:26px;background:#fbf6e6;direction:rtl;text-align:center;font-family:Tahoma,Arial,sans-serif;color:#1a1a1a">' +
+      '<div style="height:100%;box-sizing:border-box;border:7px solid ' + teal + ';padding:10px">' +
+      '<div style="height:100%;box-sizing:border-box;border:2px solid ' + gold + ';padding:40px 44px">' +
+      (logoData ? '<img src="' + logoData + '" style="width:130px;height:130px;object-fit:contain" alt=""/>' : '') +
+      '<div style="font-size:30px;font-weight:bold;color:' + teal + ';margin-top:8px">معهد الهلالي</div>' +
+      '<div style="font-size:15px;color:#777;margin-top:4px">' + esc(TITLE) + '</div>' +
+      '<div style="margin:36px auto 0;width:260px;border-top:3px solid ' + gold + '"></div>' +
+      '<div style="font-size:64px;font-weight:bold;color:' + gold + ';margin-top:26px">شهادة تقدير</div>' +
+      '<div style="font-size:22px;margin-top:50px;color:#444">يتشرف معهد الهلالي بمنح الطالب</div>' +
+      '<div style="font-size:46px;font-weight:bold;color:' + teal + ';margin:26px 0;padding-bottom:12px;border-bottom:2px dotted ' + gold + '">' + esc(s.name) + '</div>' +
+      '<div style="font-size:24px;line-height:2.1;margin-top:30px;color:#222;padding:0 10px">' + noteHtml(text) + '</div>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:120px;font-size:18px;padding:0 20px">' +
+      '<div>التاريخ:<br><b style="direction:ltr;display:inline-block;margin-top:6px">' + today() + '</b></div>' +
+      '<div>إدارة المعهد<br><span style="display:inline-block;margin-top:14px">____________________</span></div></div>' +
+      '</div></div></div>';
+  }
+  function certCard(s) {
+    var auto = certAuto(s);
+    var kinds = '<div class="chips noprint">' + Object.keys(CK).map(function (k) {
+      return '<button class="chip' + (certKind === k ? ' on' : '') + '" data-a="certkind" data-v="' + k + '">' + CK[k].i + ' ' + CK[k].t + '</button>';
+    }).join('') + '</div>';
+    return '<div class="card noprint"><div class="name">شهادة تقدير</div>' + kinds +
+      '<textarea id="cr" style="width:100%;box-sizing:border-box;min-height:100px;margin-top:8px;padding:10px;border-radius:10px;border:1px solid rgba(128,128,128,.5);background:inherit;color:inherit;font:inherit">' + esc(certText || auto) + '</textarea>' +
+      '<button class="btn" data-a="certpdf" style="margin-top:8px;width:100%">إنشاء الشهادة PDF وإرسالها</button></div>';
+  }
+  function sendCert(btn) {
+    var s = curStudent(); if (!s) return;
+    var text = (certText || certAuto(s)).trim();
+    var old = btn.textContent;
+    btn.textContent = 'جارٍ التجهيز...'; btn.disabled = true;
+    function done() { btn.textContent = old; btn.disabled = false; }
+    makeHtmlPDF(certHTML(s, text)).then(function (blob) {
+      var fname = 'شهادة تقدير ' + s.name.replace(/[\\\/:*?"<>|]/g, ' ') + '.pdf';
+      var file = null;
+      try { file = new File([blob], fname, { type: 'application/pdf' }); } catch (e) {}
+      var msg = 'السلام عليكم ورحمة الله،\nيسرنا إهداءكم شهادة تقدير للطالب ' + s.name + ' من معهد الهلالي.';
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        return navigator.share({ files: [file], title: fname, text: msg }).catch(function (e) {
+          if (!e || e.name !== 'AbortError') throw e;
+        });
+      }
+      downloadBlob(blob, fname);
+      alert('تم حفظ الشهادة في جوالك (التنزيلات). أرفقها في واتساب مع ولي الأمر.');
+      if (s.phone) window.open('https://wa.me/' + s.phone + '?text=' + encodeURIComponent(msg), '_blank');
+    }).then(done, function () { done(); alert('تعذّر إنشاء الشهادة. حاول مرة أخرى.'); });
+  }
+
   function stuView() {
     if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var s = curStudent();
@@ -488,6 +545,7 @@
     }
     h += stuMarks(s);
     h += notesCard(s);
+    h += certCard(s);
     return h;
   }
 
@@ -935,6 +993,8 @@
     var nt0 = document.getElementById('nt'); if (nt0) noteDraft = nt0.value;
     var im0 = document.getElementById('imp'); if (im0) impDraft = im0.value;
     captureAnn();
+    var cr0 = document.getElementById('cr'), cs0 = curStudent();
+    if (cr0 && cs0) certText = (cr0.value.trim() === certAuto(cs0).trim()) ? '' : cr0.value;
     var a = t.dataset.a, id = t.dataset.id;
     if (a === 'login') { doLogin(); return; }
     if (a === 'retry') { location.reload(); return; }
@@ -947,6 +1007,7 @@
     if (a === 'wasend') { if (sendWA(id)) markSent(id); render(); return; }
     if (a === 'wanext') { var nxs = bulkNext(); if (nxs && sendWA(nxs.id)) markSent(nxs.id); render(); return; }
     if (a === 'wr') { sendReport(); return; }
+    if (a === 'certpdf') { sendCert(t); return; }
     if (a === 'rcpt') { sendReceipt(t, id, t.dataset.pid); return; }
     if (a === 'warem') { sendFeeRemind(id); return; }
     if (a === 'pdf') { printPDF(); return; }
@@ -958,7 +1019,7 @@
     else if (a === 'bulkopen') { bulkOpen = !bulkOpen; }
     else if (a === 'pick') { captureDraft(); subj = t.dataset.v; }
     else if (a === 'stuopen') { stuOpen = !stuOpen; }
-    else if (a === 'pickstu') { sel = id; stuOpen = false; }
+    else if (a === 'pickstu') { sel = id; stuOpen = false; certText = ''; }
     else if (a === 'impopen') { impOpen = !impOpen; }
     else if (a === 'impgo') {
       var rows = parseImport(impDraft);
@@ -976,6 +1037,7 @@
       add.forEach(function (r, i) { db.students.push({ id: 's' + (base + i), name: r.name, phone: r.phone }); });
       impDraft = ''; impOpen = false; save();
     }
+    else if (a === 'certkind') { certKind = t.dataset.v; certText = ''; }
     else if (a === 'annkind') { annKind = t.dataset.v; }
     else if (a === 'anngen') { annGen(); }
     else if (a === 'annnext') {
