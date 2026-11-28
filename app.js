@@ -59,7 +59,7 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false;
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false, noteKind = 'gen', noteDraft = '';
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -237,6 +237,28 @@
       '</tbody></table><button class="btn noprint" data-a="wmk" style="margin-top:10px;width:100%">إرسال العلامات لولي الأمر</button></div>';
   }
 
+  var NK = { good: { t: 'إيجابية', i: '⭐', c: '#1a8a5a' }, warn: { t: 'تنبيه', i: '⚠️', c: '#c0392b' }, gen: { t: 'عامة', i: '📝', c: '#1a6f6f' } };
+  function noteHtml(x) { return esc(x).replace(/\n/g, '<br>'); }
+  function stuNotes(s, all) {
+    return (s.notes || []).filter(function (n) { return all || String(n.d).slice(0, 7) === month; })
+      .sort(function (a, b) { return a.d < b.d ? 1 : a.d > b.d ? -1 : nid(b) - nid(a); });
+  }
+  function notesCard(s) {
+    var list = stuNotes(s, stuAll);
+    var kinds = '<div class="chips noprint">' + Object.keys(NK).map(function (k) {
+      return '<button class="chip' + (noteKind === k ? ' on' : '') + '" data-a="notekind" data-v="' + k + '">' + NK[k].i + ' ' + NK[k].t + '</button>';
+    }).join('') + '</div>';
+    var form = '<div class="noprint" style="margin-top:8px">' + kinds +
+      '<textarea id="nt" placeholder="اكتب الملاحظة هنا..." style="width:100%;box-sizing:border-box;min-height:84px;margin-top:8px;padding:10px;border-radius:10px;border:1px solid rgba(128,128,128,.5);background:inherit;color:inherit;font:inherit">' + esc(noteDraft) + '</textarea>' +
+      '<button class="btn" data-a="addnote" style="margin-top:8px;width:100%">إضافة الملاحظة</button></div>';
+    var items = list.length ? list.map(function (n) {
+      var k = NK[n.k] || NK.gen;
+      return '<div class="row" style="margin-top:10px;align-items:flex-start"><div style="min-width:0"><div class="sub" style="color:' + k.c + '">' + k.i + ' ' + k.t + ' · <span dir="ltr">' + esc(n.d) + '</span></div><div style="margin-top:2px;line-height:1.7">' + noteHtml(n.x) + '</div></div>' +
+        '<button class="btn x noprint" data-a="delnote" data-id="' + n.id + '">حذف</button></div>';
+    }).join('') : '<div class="sub" style="margin-top:6px">لا توجد ملاحظات' + (stuAll ? '' : ' في هذا الشهر') + '</div>';
+    return '<div class="card"><div class="name">ملاحظات الإدارة</div>' + items + form + '</div>';
+  }
+
   function stuView() {
     if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var s = curStudent();
@@ -262,6 +284,7 @@
         (stuAll ? '' : '<button class="btn" data-a="wr" style="margin-top:8px">إرسال التقرير لولي الأمر</button>') + '</div>';
     }
     h += stuMarks(s);
+    h += notesCard(s);
     return h;
   }
 
@@ -411,6 +434,13 @@
     } else {
       att = '<div style="font-size:13px;color:#555;margin-top:6px">لا توجد بيانات حضور في هذه الفترة</div>';
     }
+    var nl = stuNotes(s, all), notesSec = '';
+    if (nl.length) {
+      notesSec = sec('ملاحظات الإدارة', nl.map(function (n) {
+        var k = NK[n.k] || NK.gen;
+        return '<div style="font-size:13px;line-height:1.8;margin-bottom:6px;border-right:3px solid ' + k.c + ';padding-right:8px"><b style="color:' + k.c + '">' + k.t + '</b> <span style="direction:ltr;display:inline-block;color:#777">(' + esc(n.d) + ')</span>: ' + noteHtml(n.x) + '</div>';
+      }).join(''));
+    }
     var rows = '', tot = 0, n = 0;
     db.subjects.forEach(function (sj) {
       var ex = db.marks.filter(function (m) { return m.subj === sj && m.scores[s.id] !== undefined; })
@@ -444,6 +474,7 @@
       '<div style="margin-top:16px;font-size:22px;font-weight:bold">الطالب: ' + esc(s.name) + '</div>' +
       sec('الحضور والغياب', att) +
       sec('العلامات', marks) +
+      notesSec +
       '<div style="margin-top:26px;border-top:1px solid #ddd;padding-top:10px;font-size:12px;color:#777;text-align:center">إدارة معهد الهلالي</div></div>';
   }
 
@@ -538,7 +569,7 @@
     if (!st) return;
     var o = stuStats(st, stuAll);
     var hasMarks = db.marks.some(function (m) { return m.scores[st.id] !== undefined; });
-    if (!o.t && !hasMarks) { alert('لا توجد بيانات حضور أو علامات لهذا الطالب.'); return; }
+    if (!o.t && !hasMarks && !stuNotes(st, stuAll).length) { alert('لا توجد بيانات حضور أو علامات لهذا الطالب.'); return; }
     var old = btn.textContent;
     btn.textContent = 'جارٍ تجهيز الملف...'; btn.disabled = true;
     function done() { btn.textContent = old; btn.disabled = false; }
@@ -698,6 +729,7 @@
   app.addEventListener('click', function (e) {
     var t = e.target.closest('[data-a]');
     if (!t) return;
+    var nt0 = document.getElementById('nt'); if (nt0) noteDraft = nt0.value;
     var a = t.dataset.a, id = t.dataset.id;
     if (a === 'login') { doLogin(); return; }
     if (a === 'retry') { location.reload(); return; }
@@ -720,6 +752,18 @@
     else if (a === 'pick') { captureDraft(); subj = t.dataset.v; }
     else if (a === 'stuopen') { stuOpen = !stuOpen; }
     else if (a === 'pickstu') { sel = id; stuOpen = false; }
+    else if (a === 'notekind') { noteKind = t.dataset.v; }
+    else if (a === 'addnote') {
+      var stn = curStudent(), ntx = (noteDraft || '').trim();
+      if (!stn || !ntx) { alert('اكتب نص الملاحظة أولاً.'); return; }
+      (stn.notes || (stn.notes = [])).push({ id: 'n' + Date.now(), d: today(), k: noteKind, x: ntx });
+      noteDraft = ''; save();
+    } else if (a === 'delnote') {
+      var std = curStudent();
+      if (!std || !confirm('حذف هذه الملاحظة؟')) return;
+      std.notes = (std.notes || []).filter(function (n) { return n.id !== id; });
+      save();
+    }
     else if (a === 'mkmode') { if (mkmode === 'in') captureDraft(); mkmode = t.dataset.v; }
     else if (a === 'add') {
       var inp = document.getElementById('nm'), name = inp.value.trim();
