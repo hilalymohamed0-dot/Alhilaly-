@@ -59,7 +59,7 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false;
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false, bulkOpen = false;
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -98,6 +98,23 @@
     var h = '<div class="card"><input type="date" id="dt" value="' + date + '"></div>' +
       '<div class="sum"><div><b>' + c.p + '</b>حاضر</div><div><b>' + c.l + '</b>متأخر</div><div><b>' + c.a + '</b>غائب</div></div>';
     if (!db.students.length) return h + '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
+    var bl = bulkList();
+    if (bl.length) {
+      var sent = getSent(), done = bl.filter(function (s) { return sent[s.id] === r[s.id]; }).length, nx = bulkNext();
+      h += '<div class="card noprint"><div class="row"><div class="name">رسائل أولياء الأمور<div class="sub">' + bl.length + ' غائب أو متأخر' + (done ? ' · أُرسل ' + done : '') + '</div></div>' +
+        '<button class="btn" data-a="bulkopen">' + (bulkOpen ? 'إخفاء' : 'عرض') + '</button></div>';
+      if (bulkOpen) {
+        h += (nx ? '<button class="btn" data-a="wanext" style="width:100%;margin-top:10px">إرسال للتالي: ' + esc(nx.name) + '</button>'
+                 : '<div class="sub" style="margin-top:10px;text-align:center">' + (done ? 'تم إرسال كل الرسائل ✓' : 'لا توجد أرقام لأولياء الأمور') + '</div>') +
+          '<div class="plist" style="margin-top:8px">' + bl.map(function (s) {
+            var isSent = sent[s.id] === r[s.id];
+            return '<div class="row brow"><div class="name">' + esc(s.name) + '<div class="sub">' + (r[s.id] === 'a' ? 'غائب' : 'متأخر') + '</div></div>' +
+              (s.phone ? '<button class="btn' + (isSent ? ' sent' : '') + '" data-a="wasend" data-id="' + s.id + '">' + (isSent ? 'تم ✓' : 'إرسال') + '</button>'
+                       : '<span class="sub warn">لا يوجد رقم</span>') + '</div>';
+          }).join('') + '</div>';
+      }
+      h += '</div>';
+    }
     return h + db.students.map(function (s) {
       function b(v, t) { return '<button class="' + v + (r[s.id] === v ? ' on' : '') + '" data-a="set" data-id="' + s.id + '" data-v="' + v + '">' + t + '</button>'; }
       var wa = (r[s.id] === 'a' || r[s.id] === 'l')
@@ -577,11 +594,26 @@
   function sendWA(id) {
     var st = db.students.filter(function (s) { return s.id === id; })[0];
     if (!st) return;
-    if (!st.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return; }
+    if (!st.phone) { alert('لا يوجد رقم لولي أمر هذا الطالب. أضفه من تبويب الطلاب.'); return false; }
     var v = (db.att[date] || {})[id];
     var what = v === 'a' ? 'تغيّب عن' : 'تأخر عن';
     var msg = 'السلام عليكم ورحمة الله،\nنود إعلامكم بأن الطالب ' + st.name + ' ' + what + ' معهد الهلالي بتاريخ ' + date + '.\nمع خالص التحية، إدارة معهد الهلالي.';
     window.open('https://wa.me/' + st.phone + '?text=' + encodeURIComponent(msg), '_blank');
+    return true;
+  }
+  function sentKey() { return 'hl_sent_' + CLS + '_' + date; }
+  function getSent() { try { return JSON.parse(localStorage.getItem(sentKey()) || '{}'); } catch (e) { return {}; } }
+  function markSent(id) {
+    var o = getSent(); o[id] = (db.att[date] || {})[id] || 1;
+    try { localStorage.setItem(sentKey(), JSON.stringify(o)); } catch (e) {}
+  }
+  function bulkList() {
+    var r = db.att[date] || {};
+    return db.students.filter(function (s) { return r[s.id] === 'a' || r[s.id] === 'l'; });
+  }
+  function bulkNext() {
+    var r = db.att[date] || {}, sent = getSent();
+    return bulkList().filter(function (s) { return s.phone && sent[s.id] !== r[s.id]; })[0];
   }
 
   function sendReport() {
@@ -608,6 +640,8 @@
     if (authState !== 'in') return;
     if ((a === 'del' || a === 'delmk' || a === 'delsub' || a === 'restore') && !isAdmin) { alert('هذا الإجراء للإدارة فقط.'); return; }
     if (a === 'wa') { sendWA(id); return; }
+    if (a === 'wasend') { if (sendWA(id)) markSent(id); render(); return; }
+    if (a === 'wanext') { var nxs = bulkNext(); if (nxs && sendWA(nxs.id)) markSent(nxs.id); render(); return; }
     if (a === 'wr') { sendReport(); return; }
     if (a === 'pdf') { printPDF(); return; }
     if (a === 'sendpdf') { sendPDF(t); return; }
@@ -615,6 +649,7 @@
     if (a === 'restore') { var rf = document.getElementById('rf'); if (rf) rf.click(); return; }
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'stuall') { stuAll = !stuAll; }
+    else if (a === 'bulkopen') { bulkOpen = !bulkOpen; }
     else if (a === 'pick') { captureDraft(); subj = t.dataset.v; }
     else if (a === 'stuopen') { stuOpen = !stuOpen; }
     else if (a === 'pickstu') { sel = id; stuOpen = false; }

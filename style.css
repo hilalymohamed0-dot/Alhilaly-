@@ -83,4 +83,10 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--gold);outline-offse
 .pitem.on{background:var(--pr-soft);color:var(--pr-d);font-weight:800}
 .pitem:active{background:var(--gold-soft)}
 
+/* رسائل أولياء الأمور */
+.brow{padding:8px 0;border-top:1px solid var(--bd)}
+.brow:first-child{border-top:0}
+.btn.sent{background:var(--pr-soft);color:var(--pr-d);box-shadow:none}
+.warn{color:var(--late);font-weight:700}
+
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
