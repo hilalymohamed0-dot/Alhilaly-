@@ -68,4 +68,19 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--gold);outline-offse
 .big:active{transform:scale(.98)}
 .big small{display:block;color:var(--mu);font-size:13.5px;font-weight:400;margin-top:3px}
 
+/* اختيار المادة والطالب */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--bd);background:#fff;color:var(--tx);font:inherit;font-size:14.5px;font-weight:700;padding:9px 15px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s,transform .12s}
+.chip small{font-size:11.5px;font-weight:700;color:var(--mu);background:var(--bg);padding:1px 8px;border-radius:999px}
+.chip.on{background:var(--pr);border-color:var(--pr);color:#fff;box-shadow:0 2px 8px rgba(15,95,95,.25)}
+.chip.on small{background:rgba(255,255,255,.22);color:#fff}
+.chip:active{transform:scale(.96)}
+.pickbtn{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:50px;padding:10px 16px;border:1.5px solid var(--bd);border-radius:14px;background:#fff;color:var(--tx);font:inherit;font-size:16px;cursor:pointer}
+.pickbtn span{color:var(--pr);font-size:15px}
+.pickpanel{margin-top:8px;padding:10px;border:1.5px solid var(--bd);border-radius:14px;background:#fff;box-shadow:var(--sh)}
+.plist{max-height:260px;overflow:auto;margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.pitem{border:0;background:none;text-align:start;font:inherit;font-size:15.5px;color:var(--tx);padding:11px 12px;border-radius:10px;cursor:pointer}
+.pitem.on{background:var(--pr-soft);color:var(--pr-d);font-weight:800}
+.pitem:active{background:var(--gold-soft)}
+
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}

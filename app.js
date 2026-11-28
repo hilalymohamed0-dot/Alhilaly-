@@ -59,7 +59,7 @@
   } catch (e) {}
 
   var tab = 'st', date = today(), month = today().slice(0, 7), sel = '', app = document.getElementById('app');
-  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false;
+  var subj = '', exTitle = '', exMax = '100', exMaxFor = '', exDate = today(), draft = {}, mkmode = 'in', stuAll = false, stuOpen = false;
 
   function studentsView() {
     var h = '<div class="card"><input id="nm" placeholder="اسم الطالب">' +
@@ -186,10 +186,12 @@
   function stuView() {
     if (!db.students.length) return '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
     var s = curStudent();
-    var opts = db.students.map(function (x) {
-      return '<option value="' + x.id + '"' + (x.id === s.id ? ' selected' : '') + '>' + esc(x.name) + '</option>';
-    }).join('');
-    var h = '<div class="card noprint"><select id="sel" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
+    var picker = '<button class="pickbtn" data-a="stuopen"><b>' + esc(s.name) + '</b><span>' + (stuOpen ? '▴' : '▾') + '</span></button>' +
+      (stuOpen ? '<div class="pickpanel"><input id="sq" placeholder="ابحث عن اسم الطالب" autocomplete="off"><div class="plist">' +
+        db.students.map(function (x) {
+          return '<button class="pitem' + (x.id === s.id ? ' on' : '') + '" data-a="pickstu" data-id="' + x.id + '">' + esc(x.name) + '</button>';
+        }).join('') + '</div></div>' : '');
+    var h = '<div class="card noprint">' + picker +
       (stuAll ? '' : '<input type="month" id="mo" value="' + month + '" style="margin-top:8px">') +
       '<button class="btn" data-a="stuall" style="margin-top:8px">' + (stuAll ? 'عرض شهر محدد' : 'عرض كل المدة') + '</button> ' +
       '<button class="btn" data-a="pdf" style="margin-top:8px">حفظ التقرير PDF</button> ' +
@@ -252,10 +254,10 @@
     if (db.subjects.indexOf(subj) < 0) subj = db.subjects[0];
     if (exMaxFor !== subj) { exMax = String(db.maxes[subj] || 100); exMaxFor = subj; }
     if (!db.students.length) return marksTop() + '<div class="empty">أضف الطلاب أولاً من تبويب الطلاب</div>';
-    var opts = db.subjects.map(function (x) {
-      return '<option value="' + esc(x) + '"' + (x === subj ? ' selected' : '') + '>' + esc(x) + (db.maxes[x] ? ' (' + db.maxes[x] + ')' : '') + '</option>';
-    }).join('');
-    var h = marksTop() + '<div class="card"><select id="sj" style="width:100%;padding:10px;font-size:16px">' + opts + '</select>' +
+    var chips = '<div class="chips">' + db.subjects.map(function (x) {
+      return '<button class="chip' + (x === subj ? ' on' : '') + '" data-a="pick" data-v="' + esc(x) + '">' + esc(x) + (db.maxes[x] ? '<small>' + db.maxes[x] + '</small>' : '') + '</button>';
+    }).join('') + '</div>';
+    var h = marksTop() + '<div class="card">' + chips +
       '<input id="exn" placeholder="اسم الامتحان (مثل: مذاكرة أولى)" value="' + esc(exTitle) + '" style="margin-top:8px">' +
       '<input id="exm" type="text" inputmode="decimal" placeholder="العلامة العظمى" value="' + esc(exMax) + '" style="margin-top:8px">' +
       '<input id="exd" type="date" value="' + exDate + '" style="margin-top:8px"></div>';
@@ -613,6 +615,9 @@
     if (a === 'restore') { var rf = document.getElementById('rf'); if (rf) rf.click(); return; }
     if (a === 'tab') { tab = t.dataset.v; }
     else if (a === 'stuall') { stuAll = !stuAll; }
+    else if (a === 'pick') { captureDraft(); subj = t.dataset.v; }
+    else if (a === 'stuopen') { stuOpen = !stuOpen; }
+    else if (a === 'pickstu') { sel = id; stuOpen = false; }
     else if (a === 'mkmode') { if (mkmode === 'in') captureDraft(); mkmode = t.dataset.v; }
     else if (a === 'add') {
       var inp = document.getElementById('nm'), name = inp.value.trim();
@@ -672,6 +677,11 @@
     if (e.target.id === 'sel' && e.target.value) { sel = e.target.value; render(); }
     if (e.target.id === 'sj' && e.target.value) { captureDraft(); subj = e.target.value; render(); }
     if (e.target.id === 'rf' && e.target.files && e.target.files[0] && isAdmin) { restoreFrom(e.target.files[0]); }
+  });
+  app.addEventListener('input', function (e) {
+    if (e.target.id !== 'sq') return;
+    var q = e.target.value.trim().toLowerCase(), its = app.querySelectorAll('.pitem');
+    for (var i = 0; i < its.length; i++) its[i].style.display = (!q || its[i].textContent.toLowerCase().indexOf(q) >= 0) ? '' : 'none';
   });
   app.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.target.id === 'em' || e.target.id === 'pw')) { e.preventDefault(); doLogin(); return; }
