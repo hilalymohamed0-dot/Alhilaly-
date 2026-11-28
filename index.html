@@ -23,8 +23,9 @@
 <button class="btn" id="lbtn" style="margin-top:8px;width:100%">دخول</button></div>
 <div id="appbox" style="display:none">
 <div class="card row"><div class="sub name" id="acc"></div><button class="btn x" id="lo">تسجيل الخروج</button></div>
-<a class="big" href="tasi3.html">التاسع<small>الحضور والعلامات والتقارير</small></a>
-<a class="big" href="bakaloria.html">بكالوريا<small>الحضور والعلامات والتقارير</small></a>
+<div class="sub" id="tday" style="margin:2px 2px 10px"></div>
+<a class="big" href="tasi3.html" data-tile>التاسع<small>الحضور والعلامات والتقارير</small><div class="dpills"></div></a>
+<a class="big" href="bakaloria.html" data-tile>بكالوريا<small>الحضور والعلامات والتقارير</small><div class="dpills"></div></a>
 </div>
 </main>
 
@@ -49,16 +50,43 @@ var c=(err&&err.code)||'';
 er.textContent=c==='auth/network-request-failed'?'لا يوجد اتصال بالإنترنت':c==='auth/too-many-requests'?'محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة':'اسم المستخدم أو كلمة المرور غير صحيحة';
 b.textContent='دخول';b.disabled=false});
 }
+function today(){var d=new Date();return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
+var dashOn=false;
+function startDash(app,F){
+if(dashOn)return;dashOn=true;
+try{$('tday').textContent='حضور اليوم · '+new Date().toLocaleDateString('ar',{weekday:'long',day:'numeric',month:'long'})}catch(e){}
+var fs;try{fs=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){fs=F.getFirestore(app)}
+var dt=today();
+[].forEach.call(document.querySelectorAll('[data-tile]'),function(tile){
+var box=tile.querySelector('.dpills');
+fetch(tile.getAttribute('href')).then(function(r){return r.text()}).then(function(t){
+var m=/data-cls="([^"]+)"/.exec(t);if(!m)return;
+var cls=m[1],n=null,r=null;
+function draw(){
+if(n===null||r===null)return;
+var p=0,l=0,a=0;
+Object.keys(r).forEach(function(id){var v=r[id];if(v==='p')p++;else if(v==='l')l++;else if(v==='a')a++});
+var rec=p+l+a;
+if(!rec){box.innerHTML='<span class="dp wn">لم يُسجَّل حضور اليوم</span>'+(n?'<span class="dp">'+n+' طالب</span>':'');return}
+var h='<span class="dp ok">حاضر '+p+'</span><span class="dp no">غائب '+a+'</span><span class="dp lt">متأخر '+l+'</span>';
+if(n>rec)h+='<span class="dp wn">بلا تسجيل '+(n-rec)+'</span>';
+box.innerHTML=h;
+}
+F.onSnapshot(F.collection(fs,'classes',cls,'students'),function(sn){n=sn.size;draw()},function(e){console.log('dash',e)});
+F.onSnapshot(F.doc(fs,'classes',cls,'att',dt),function(sn){r=sn.exists()?(sn.data().r||{}):{};draw()},function(e){console.log('dash',e)});
+}).catch(function(){});
+});
+}
 $('lbtn').onclick=doLogin;
 $('pw').onkeydown=$('em').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();doLogin()}};
 $('lo').onclick=function(){if(!confirm('تسجيل الخروج من هذا الجهاز؟'))return;if(AU)AU.mod.signOut(AU.auth)};
 var base='https://www.gstatic.com/firebasejs/'+FB+'/';
 fetch('firebase-config.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('no config');return r.json()}).then(function(cfg){
 if(!cfg||!cfg.projectId||!cfg.apiKey)throw new Error('bad config');
-return Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js')]).then(function(m){
+return Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js'),import(base+'firebase-firestore.js')]).then(function(m){
 var a=m[0].initializeApp(cfg),au=m[1].getAuth(a);AU={auth:au,mod:m[1]};
 m[1].onAuthStateChanged(au,function(u){
-if(u){$('acc').textContent='الحساب: '+(u.email||'');show('in')}else show('out')});
+if(u){$('acc').textContent='الحساب: '+(u.email||'');show('in');try{startDash(a,m[2])}catch(e){console.log('dash',e)}}else show('out')});
 });
 }).catch(function(e){console.log('auth init',e&&e.message);show('err')});
 })();
