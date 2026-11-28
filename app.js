@@ -797,6 +797,7 @@
   function authView() {
     var head = '<header class="brand"><img src="icon-192.png" alt=""><div><h1>معهد الهلالي</h1><span>' + TITLE + '</span></div><a class="back" href="index.html">الرئيسية</a></header>';
     if (authState === 'loading') return head + '<div class="empty">جارٍ التحميل...</div>';
+    if (authState === 'denied') return head + '<div class="card"><div class="name">ليس لديك صلاحية لهذا الصف</div><div class="sub">تواصل مع الإدارة لإضافته إلى حسابك.</div></div>';
     if (authState === 'error') return head + '<div class="card"><div class="name">تعذّر الاتصال</div><div class="sub">افتح التطبيق مرة بوجود إنترنت لتسجيل الدخول.</div><button class="btn" data-a="retry" style="margin-top:8px">إعادة المحاولة</button></div>';
     return head + '<div class="card"><div class="name">تسجيل الدخول</div>' +
       '<input id="em" dir="ltr" autocomplete="username" autocapitalize="none" placeholder="اسم المستخدم" value="' + esc(loginEm) + '" style="margin-top:8px">' +
@@ -1025,6 +1026,12 @@
               if (u) {
                 curEmail = u.email || ''; isAdmin = curEmail.toLowerCase() === ADMIN; authState = 'in';
                 try { if (!fs) initSync(a, m[1]); } catch (e) { console.log('sync init', e); }
+                if (!isAdmin && fs) {
+                  m[1].getDoc(m[1].doc(fs, 'teachers', curEmail.toLowerCase())).then(function (sn) {
+                    var c = (sn.exists() && sn.data().classes) || [];
+                    if (c.indexOf(CLS) < 0) { authState = 'denied'; render(); }
+                  }, function (e) { console.log('perm', e); });
+                }
               } else { authState = 'out'; location.replace('index.html'); }
               render();
             });

@@ -24,8 +24,9 @@
 <div id="appbox" style="display:none">
 <div class="card row"><div class="sub name" id="acc"></div><button class="btn x" id="lo">تسجيل الخروج</button></div>
 <div class="sub" id="tday" style="margin:2px 2px 10px"></div>
-<a class="big" href="tasi3.html" data-tile>التاسع<small>الحضور والعلامات والتقارير</small><div class="dpills"></div></a>
-<a class="big" href="bakaloria.html" data-tile>بكالوريا<small>الحضور والعلامات والتقارير</small><div class="dpills"></div></a>
+<a class="big" href="tasi3.html" data-tile style="display:none">التاسع<small>الحضور والعلامات والتقارير</small><div class="dpills"></div></a>
+<a class="big" href="bakaloria.html" data-tile style="display:none">بكالوريا<small>الحضور والعلامات والتقارير</small><div class="dpills"></div></a>
+<div id="noacc" class="empty" style="display:none">لا توجد صفوف مضافة لحسابك بعد. تواصل مع الإدارة.</div>
 </div>
 </main>
 
@@ -52,16 +53,19 @@ b.textContent='دخول';b.disabled=false});
 }
 function today(){var d=new Date();return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
 var dashOn=false;
-function startDash(app,F){
+function startDash(app,F,em){
 if(dashOn)return;dashOn=true;
 try{$('tday').textContent='حضور اليوم · '+new Date().toLocaleDateString('ar',{weekday:'long',day:'numeric',month:'long'})}catch(e){}
 var fs;try{fs=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){fs=F.getFirestore(app)}
 var dt=today();
+var admin=(em||'').toLowerCase()==='admin@alhilali.app';
+var perm=admin?Promise.resolve(null):F.getDoc(F.doc(fs,'teachers',(em||'').toLowerCase())).then(function(sn){return (sn.exists()&&sn.data().classes)||[]}).catch(function(){return []});
+perm.then(function(l){if(l&&!l.length)$('noacc').style.display='block'});
 [].forEach.call(document.querySelectorAll('[data-tile]'),function(tile){
 var box=tile.querySelector('.dpills');
 fetch(tile.getAttribute('href')).then(function(r){return r.text()}).then(function(t){
 var m=/data-cls="([^"]+)"/.exec(t);if(!m)return;
-var cls=m[1],n=null,r=null;
+var cls=m[1];return perm.then(function(list){if(list&&list.indexOf(cls)<0)return;tile.style.display='';var n=null,r=null;
 function draw(){
 if(n===null||r===null)return;
 var p=0,l=0,a=0;
@@ -74,7 +78,8 @@ box.innerHTML=h;
 }
 F.onSnapshot(F.collection(fs,'classes',cls,'students'),function(sn){n=sn.size;draw()},function(e){console.log('dash',e)});
 F.onSnapshot(F.doc(fs,'classes',cls,'att',dt),function(sn){r=sn.exists()?(sn.data().r||{}):{};draw()},function(e){console.log('dash',e)});
-}).catch(function(){});
+});
+}).catch(function(){perm.then(function(list){var k=tile.getAttribute('href').replace('.html','');if(!list||list.indexOf(k)>=0)tile.style.display=''})});
 });
 }
 $('lbtn').onclick=doLogin;
@@ -86,7 +91,7 @@ if(!cfg||!cfg.projectId||!cfg.apiKey)throw new Error('bad config');
 return Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js'),import(base+'firebase-firestore.js')]).then(function(m){
 var a=m[0].initializeApp(cfg),au=m[1].getAuth(a);AU={auth:au,mod:m[1]};
 m[1].onAuthStateChanged(au,function(u){
-if(u){$('acc').textContent='الحساب: '+(u.email||'');show('in');try{startDash(a,m[2])}catch(e){console.log('dash',e)}}else show('out')});
+if(u){$('acc').textContent='الحساب: '+(u.email||'');show('in');try{startDash(a,m[2],u.email)}catch(e){console.log('dash',e)}}else show('out')});
 });
 }).catch(function(e){console.log('auth init',e&&e.message);show('err')});
 })();
