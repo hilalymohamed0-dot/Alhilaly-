@@ -913,7 +913,7 @@
               if (u) {
                 curEmail = u.email || ''; isAdmin = curEmail.toLowerCase() === ADMIN; authState = 'in';
                 try { if (!fs) initSync(a, m[1]); } catch (e) { console.log('sync init', e); }
-              } else { authState = 'out'; }
+              } else { authState = 'out'; location.replace('index.html'); }
               render();
             });
           });
